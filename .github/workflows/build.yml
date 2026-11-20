@@ -1,0 +1,297 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  # Product name as built by JUCE (with a space) and the name used for the zips.
+  PRODUCT: Synthia
+  ZIPNAME: Synthia
+  TARGET: Synthia
+  # AU identifiers for auval: type, plugin code, manufacturer code (see CMakeLists.txt)
+  AU_TYPE: aufx
+  AU_SUBTYPE: Snth
+  AU_MANUFACTURER: Ansc
+  PLUGINVAL_VERSION: v1.0.4
+  PLUGINVAL_STRICTNESS: 10
+  BUILD_TYPE: Release
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ----------------------------------------------------------------------------
+  linux:
+    name: Linux (unit tests + render CLI + pluginval)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build xvfb libasound2-dev libx11-dev libxext-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev \
+            libgl1-mesa-dev
+
+      - name: Read dependency versions
+        id: deps
+        run: |
+          echo "juce=$(sed -nE 's/^set\(SY_JUCE_TAG +"([^"]+)".*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+          echo "catch=$(sed -nE 's/^set\(SY_CATCH2_TAG +"([^"]+)".*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache dependency downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            .deps/juce-src
+            .deps/juce-subbuild
+            .deps/catch2-src
+            .deps/catch2-subbuild
+          key: deps-${{ runner.os }}-${{ steps.deps.outputs.juce }}-${{ steps.deps.outputs.catch }}
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DFETCHCONTENT_BASE_DIR="$GITHUB_WORKSPACE/.deps"
+
+      - name: Build tests and VST3
+        run: cmake --build build --target SynthiaTests SynthiaRender ${TARGET}_VST3 --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: pluginval (VST3, with the editor on a virtual display)
+        run: |
+          curl -fsSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/pluginval_Linux.zip"
+          unzip -oq pluginval.zip
+          xvfb-run -a ./pluginval --strictness-level $PLUGINVAL_STRICTNESS --validate-in-process \
+            --validate "build/${TARGET}_artefacts/$BUILD_TYPE/VST3/$PRODUCT.vst3"
+
+  # ----------------------------------------------------------------------------
+  macos:
+    name: macOS (universal VST3 + AU + Standalone)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read dependency versions
+        id: deps
+        run: |
+          echo "juce=$(sed -nE 's/^set\(SY_JUCE_TAG +"([^"]+)".*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+          echo "catch=$(sed -nE 's/^set\(SY_CATCH2_TAG +"([^"]+)".*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache dependency downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            .deps/juce-src
+            .deps/juce-subbuild
+            .deps/catch2-src
+            .deps/catch2-subbuild
+          key: deps-${{ runner.os }}-${{ steps.deps.outputs.juce }}-${{ steps.deps.outputs.catch }}
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DFETCHCONTENT_BASE_DIR="$GITHUB_WORKSPACE/.deps"
+
+      - name: Build
+        run: cmake --build build --parallel $(sysctl -n hw.ncpu)
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Collect bundles
+        run: |
+          ART="build/${TARGET}_artefacts/$BUILD_TYPE"
+          mkdir -p "dist/$ZIPNAME-macOS"
+          cp -R "$ART/VST3/$PRODUCT.vst3" "$ART/AU/$PRODUCT.component" "$ART/Standalone/$PRODUCT.app" "dist/$ZIPNAME-macOS/"
+          cp "build/SynthiaRender_artefacts/$BUILD_TYPE/synthia-render" "dist/$ZIPNAME-macOS/"
+
+      - name: Check that all binaries are universal
+        run: |
+          cd "dist/$ZIPNAME-macOS"
+          for bin in "$PRODUCT.vst3" "$PRODUCT.component" "$PRODUCT.app"; do
+            archs=$(lipo -archs "$bin/Contents/MacOS/$PRODUCT")
+            echo "$bin: $archs"
+            [[ "$archs" == *arm64* && "$archs" == *x86_64* ]]
+          done
+
+      - name: Ad-hoc code sign
+        run: |
+          cd "dist/$ZIPNAME-macOS"
+          for bundle in "$PRODUCT.vst3" "$PRODUCT.component" "$PRODUCT.app"; do
+            codesign --force --deep -s - "$bundle"
+            codesign --verify --deep --strict --verbose=2 "$bundle"
+          done
+
+      - name: pluginval (VST3)
+        run: |
+          curl -fsSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/pluginval_macOS.zip"
+          unzip -oq pluginval.zip
+          pluginval.app/Contents/MacOS/pluginval --strictness-level $PLUGINVAL_STRICTNESS --validate-in-process \
+            --output-dir pluginval-logs --validate "dist/$ZIPNAME-macOS/$PRODUCT.vst3"
+
+      - name: auval (AU)
+        run: |
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          rm -rf "$HOME/Library/Audio/Plug-Ins/Components/$PRODUCT.component"
+          cp -R "dist/$ZIPNAME-macOS/$PRODUCT.component" "$HOME/Library/Audio/Plug-Ins/Components/"
+          # Make the system notice the newly installed component.
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          auval -a | grep -i "$AU_MANUFACTURER" || true
+          auval -strict -v $AU_TYPE $AU_SUBTYPE $AU_MANUFACTURER
+
+      - name: Zip
+        run: |
+          cd dist
+          ditto -c -k --keepParent "$ZIPNAME-macOS" "$ZIPNAME-macOS.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/${{ env.ZIPNAME }}-macOS.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload pluginval logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pluginval-logs-macOS
+          path: pluginval-logs
+          if-no-files-found: ignore
+
+  # ----------------------------------------------------------------------------
+  windows:
+    name: Windows (x64 VST3 + Standalone)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read dependency versions
+        id: deps
+        run: |
+          echo "juce=$(sed -nE 's/^set\(SY_JUCE_TAG +"([^"]+)".*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+          echo "catch=$(sed -nE 's/^set\(SY_CATCH2_TAG +"([^"]+)".*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache dependency downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            .deps/juce-src
+            .deps/juce-subbuild
+            .deps/catch2-src
+            .deps/catch2-subbuild
+          key: deps-${{ runner.os }}-${{ steps.deps.outputs.juce }}-${{ steps.deps.outputs.catch }}
+
+      - name: Configure
+        # The static MSVC runtime (CMAKE_MSVC_RUNTIME_LIBRARY) is set in CMakeLists.txt.
+        run: cmake -S . -B build -A x64 -DFETCHCONTENT_BASE_DIR="$GITHUB_WORKSPACE/.deps"
+
+      - name: Build
+        run: cmake --build build --config $BUILD_TYPE --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build -C $BUILD_TYPE --output-on-failure
+
+      - name: Collect binaries
+        run: |
+          ART="build/${TARGET}_artefacts/$BUILD_TYPE"
+          mkdir -p "dist/$ZIPNAME-Windows"
+          cp -R "$ART/VST3/$PRODUCT.vst3" "dist/$ZIPNAME-Windows/"
+          cp "$ART/Standalone/$PRODUCT.exe" "dist/$ZIPNAME-Windows/"
+          cp "build/SynthiaRender_artefacts/$BUILD_TYPE/synthia-render.exe" "dist/$ZIPNAME-Windows/"
+
+      - name: Check for static runtime (no VC++ redistributable needed)
+        shell: pwsh
+        run: |
+          $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find "VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -Last 1
+          $binary = "dist\$env:ZIPNAME-Windows\$env:PRODUCT.vst3\Contents\x86_64-win\$env:PRODUCT.vst3"
+          $deps = & $dumpbin /dependents $binary
+          $deps
+          if ($deps -match 'VCRUNTIME|MSVCP|ucrtbase') { throw "Plugin links the dynamic C++ runtime" }
+
+      - name: pluginval (VST3)
+        run: |
+          curl -fsSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/pluginval_Windows.zip"
+          unzip -oq pluginval.zip
+          ./pluginval.exe --strictness-level $PLUGINVAL_STRICTNESS --validate-in-process \
+            --output-dir pluginval-logs --validate "dist/$ZIPNAME-Windows/$PRODUCT.vst3"
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path "dist\$env:ZIPNAME-Windows" -DestinationPath "dist\$env:ZIPNAME-Windows.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/${{ env.ZIPNAME }}-Windows.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload pluginval logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pluginval-logs-Windows
+          path: pluginval-logs
+          if-no-files-found: ignore
+
+  # ----------------------------------------------------------------------------
+  package:
+    name: Package / Release
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download plugin zips
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ env.ZIPNAME }}-*
+          path: dist
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Check the zips
+        run: |
+          ls -lR dist
+          for os in macOS Windows; do
+            zip=$(find dist -type f -name "$ZIPNAME-$os.zip" | head -1)
+            [[ -n "$zip" ]] || { echo "Missing $ZIPNAME-$os.zip"; exit 1; }
+            unzip -l "$zip" | tail -3
+          done
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(find dist -type f -name "$ZIPNAME-*.zip")
+          # The release may already exist (created on the GitHub website, which is
+          # what pushed the tag): then just attach the builds to it.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" $files --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" $files \
+              --repo "$GITHUB_REPOSITORY" --title "Synthia $GITHUB_REF_NAME" --generate-notes
+          fi
