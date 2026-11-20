@@ -12,10 +12,18 @@ SynthiaProcessor::SynthiaProcessor()
 {
     for (int i = 0; i < pid::count; ++i)
         engine.attachParameter (i, apvts.getRawParameterValue (paramId (i)));
-    startTimerHz (10);
+    // Latency depends on these two parameters only (Align Spectral). No polling timer: on Linux
+    // hosts a permanently running timer keeps the host run loop busy (pluginval crashes seen).
+    apvts.addParameterListener (paramId (pid::alignSpec), this);
+    apvts.addParameterListener (paramId (pid::spSize), this);
 }
 
-SynthiaProcessor::~SynthiaProcessor() { stopTimer(); }
+SynthiaProcessor::~SynthiaProcessor()
+{
+    cancelPendingUpdate();
+    apvts.removeParameterListener (paramId (pid::alignSpec), this);
+    apvts.removeParameterListener (paramId (pid::spSize), this);
+}
 
 void SynthiaProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
@@ -62,10 +70,11 @@ juce::AudioProcessorParameter* SynthiaProcessor::getBypassParameter() const
     return apvts.getParameter (paramId (pid::bypass));
 }
 
-void SynthiaProcessor::timerCallback()
+void SynthiaProcessor::handleAsyncUpdate()
 {
     // Latency changes (Align Spectral / FFT size) are reported from the message thread.
-    const int want = engine.getDesiredLatency();
+    const double sr = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+    const int want = dsp::Engine::latencyFor (getParam (pid::alignSpec) >= 0.5f, (int) getParam (pid::spSize), sr);
     if (want != reportedLatency)
     {
         reportedLatency = want;

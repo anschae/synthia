@@ -7,7 +7,9 @@
 namespace synthia
 {
 /** Thin wrapper: APVTS + Engine + state + presets. All DSP lives in dsp::Engine. */
-class SynthiaProcessor : public juce::AudioProcessor, private juce::Timer
+class SynthiaProcessor : public juce::AudioProcessor,
+                         private juce::AudioProcessorValueTreeState::Listener,
+                         private juce::AsyncUpdater
 {
 public:
     SynthiaProcessor();
@@ -62,7 +64,8 @@ public:
     PresetManager presets;
 
 private:
-    void timerCallback() override;
+    void parameterChanged (const juce::String&, float) override { triggerAsyncUpdate(); }
+    void handleAsyncUpdate() override;
 
     juce::String presetName { "Init" };
     int reportedLatency = 0;
