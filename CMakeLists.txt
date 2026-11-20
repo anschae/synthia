@@ -138,6 +138,7 @@ if(SY_BUILD_RENDER)
     target_sources(SynthiaRender PRIVATE tools/Render.cpp)
     target_link_libraries(SynthiaRender PRIVATE SYShared)
     target_compile_definitions(SynthiaRender PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
+    set_target_properties(SynthiaRender PROPERTIES OUTPUT_NAME "synthia-render")
 endif()
 
 # ==============================================================================

@@ -51,3 +51,97 @@ synthia-render input.wav preset.xml output.wav [--bpm 120] [--tail 4]
 Runs the complete plugin offline over a WAV file using a preset file (any preset saved from the
 plugin, or an exported state XML). `--bpm` sets the host tempo for synced features, `--tail`
 adds seconds of silence at the end so delays and reverbs can ring out.
+
+## Quick start
+
+1. Put Synthia on a track with your **clean DI** (mono or stereo). Synthia is an audio effect, not an instrument.
+2. Pick a factory preset (top bar → preset name). Good first stops: *Poly Saw Lead*, *Djent Synth Layer*,
+   *Glass Pad*, *Chord Vocoder Strums*, *Shimmer Cathedral*.
+3. Set **Input → Gain** so the input meter peaks around −12 … −6 dB and watch the **Pick** LED: it should flash
+   once per pick. If it misses soft notes, raise **Pick Sens**; if it double-triggers, raise **Retrigger**.
+
+Synthia never detects pitch: every sound is made from the audio itself, so chords, bends, vibrato and
+8-string low notes are processed just like single notes.
+
+## User guide
+
+### Signal flow
+```
+Input (gain, HPF, gate, envelope follower, pick detector)
+ ├─ A Voicer      polyphonic synth from a filter bank
+ ├─ B Spectral    STFT pads: freeze, blur, partials, shift, stretch, robot/whisper
+ ├─ C Resonator   tuned resonators / chord vocoder / vowel filter (4 chord slots)
+ ├─ D Granular    grain clouds from an 8 s buffer, synced stutter
+ └─ E Dry         your clean guitar
+ → Mixer (level, pan, mute, solo, "→ Filter") → Main filter → Amp shaper → Delay → Reverb → Output
+```
+Layers that are switched off cost no CPU.
+
+### Pages
+- **Layers** – input stage on the left, one tab per layer (A–E), mixer strips at the bottom.
+  "→ Filter" decides whether a layer goes through the main filter + amp shaper (the dry guitar usually
+  should not).
+- **Filter & FX** – main filter, amp shaper (pick ADSR, swell), 16-step chopper, delay, reverb.
+- **Modulation** – LFOs, random, macros, step sequencer, and the 16-slot matrix.
+
+### A — Voicer (the synth)
+The guitar is split into 24–72 narrow bands; every band drives its own oscillator at the band's
+instantaneous frequency. **Wave** morphs sine → saw → square → pulse; **Sub**, **Oct Up** and
+**Interval** add voices at ½×, 2× and the chosen interval. **Sharpness** trades attack speed (low) for
+clean, stable tones (high). **Focus** suppresses side bands around each partial (less warble on chords).
+**Tilt** negative = rounder (fundamentals), positive = brighter/buzzier. **Low** ~45 Hz covers 7/8-string
+low notes. **Drive / Fold** are oversampled according to **Quality** (top bar).
+
+### B — Spectral
+**Freeze** captures the current sound and holds it (with a little phase **Drift** so it breathes);
+**Blend** mixes frozen and live. **Blur** smears notes into pads. **Partials** keeps only the N
+strongest peaks (glassy/organ). **Shift** (Hz) makes metallic, inharmonic tones; **Stretch** scales all
+frequencies. *Latency:* the spectral layer lags by the FFT size. That's fine for pads; for perfectly
+aligned printing switch **Align** (top bar) on – Synthia then reports the latency to the DAW and delays
+everything else to match.
+
+### C — Resonator / Vocoder / Formant
+Set up to 4 chords (root, type, octave, spread) and choose the active one with **Chord Slot** (automate
+it, or route the step sequencer to it – see the *Chord Sequencer* preset).
+- **Resonator** – your playing excites tuned strings (String), bars (Metal), bowls (Glass) or a bowed
+  string (Bowed: the bow noise follows your dynamics).
+- **Vocoder** – your guitar "plays" an internal chord (saw/square/supersaw). **Noise** adds consonants
+  on pick attacks.
+- **Formant** – a talking A-E-I-O-U filter (modulate **Vowel** with an LFO or the envelope).
+
+### D — Granular
+Grains are read from the last 8 s. **Position** = how far back, **Spray** = random offset, **Pitch** with
+optional **Quantise** (octaves = shimmer). **Freeze** stops recording. **Stutter** repeats a host-synced
+slice (1/4 … 1/32, dotted/triplets) and captures a new one every 1/4, 1/2 or bar.
+
+### Filter & amp shaper
+Ladder/SVF/comb/formant filter with **Env Amt** (envelope follower) and **Pick Amt** (pick envelope) –
+there is no keytracking. **Pick ADSR** reshapes the volume on every pick (synth-style attacks/decays;
+sustain is held while the string rings). **Swell** = automatic volume swell. **Chopper** = 16-step gate.
+
+### Delay & reverb
+Delay: ms or synced, ping-pong, filtered feedback, tape wobble. Reverb modes: **Cosmos** (huge hall),
+**Shimmer** (octave/fifth shifted feedback), **Abyss** (downward shimmer), **Bloom** (slow build-up),
+**Cloud** (granular smearing). **Infinite** freezes the reverb tail (new input is muted).
+
+### Modulation
+Sources: Env Follower, Pick Env, LFO 1/2 (free or synced incl. triplets, optional retrigger on pick),
+Random, Step Sequencer and Macros 1–4. Each matrix slot: **Source → Destination × Amount**, optionally
+scaled by **Via** (e.g. Macro 1 fades a modulation in). Modulated knobs show a yellow ring with the live
+value. The **step sequencer** has its own length (1–32 steps) independent of the bar – 7 steps of 1/16
+against 4/4 gives a polymeter; rates include triplets and quintuplets. Draw values with the mouse,
+double-click (or Alt-click) resets a step, the small boxes below enable glide into a step.
+
+### Presets, A/B, randomize
+User presets are saved to `Documents/Synthia/Presets` (`*.synthia`, plain XML). **A/B** keeps two
+versions of the sound; **A→B** copies. **Randomize** (top bar) changes the whole sound, the **Rnd**
+buttons only one section; **Chaos** sets how far it moves from the current sound.
+
+### Tips for low tunings
+- Keep **HPF** below your lowest note (G#1 ≈ 52 Hz, F#1 ≈ 46 Hz).
+- Voicer: **Low** 40–45 Hz, **Sharpness** ≈ 50 %, **Tilt** slightly negative; for tight djent
+  layers lower **Smooth** and use **Pick ADSR**.
+- Use the Dry layer (not routed to the filter) under synth layers for punch.
+
+## Building (developers)
+See `CLAUDE.md` for build commands, architecture and conventions.

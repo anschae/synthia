@@ -121,7 +121,10 @@ jobs:
           ART="build/${TARGET}_artefacts/$BUILD_TYPE"
           mkdir -p "dist/$ZIPNAME-macOS"
           cp -R "$ART/VST3/$PRODUCT.vst3" "$ART/AU/$PRODUCT.component" "$ART/Standalone/$PRODUCT.app" "dist/$ZIPNAME-macOS/"
-          cp "build/SynthiaRender_artefacts/$BUILD_TYPE/synthia-render" "dist/$ZIPNAME-macOS/"
+          # the offline renderer (location differs between generators)
+          RENDER=$(find build -type f -name "synthia-render" -perm -u+x | head -1)
+          echo "renderer: $RENDER"
+          cp "$RENDER" "dist/$ZIPNAME-macOS/"
 
       - name: Check that all binaries are universal
         run: |
@@ -218,7 +221,9 @@ jobs:
           mkdir -p "dist/$ZIPNAME-Windows"
           cp -R "$ART/VST3/$PRODUCT.vst3" "dist/$ZIPNAME-Windows/"
           cp "$ART/Standalone/$PRODUCT.exe" "dist/$ZIPNAME-Windows/"
-          cp "build/SynthiaRender_artefacts/$BUILD_TYPE/synthia-render.exe" "dist/$ZIPNAME-Windows/"
+          RENDER=$(find build -type f -name "synthia-render.exe" | head -1)
+          echo "renderer: $RENDER"
+          cp "$RENDER" "dist/$ZIPNAME-Windows/"
 
       - name: Check for static runtime (no VC++ redistributable needed)
         shell: pwsh

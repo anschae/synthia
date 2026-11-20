@@ -44,11 +44,74 @@ Input (gain, HPF, gate, env follower, pick trigger)
  ├─ D Granular (8 s buffer, 64-grain pool, stutter)
  └─ E Dry
  → Mixer → Main filter → Amp shaper (pick ADSR, swell, chopper)
- → [reserved: future NAM/IR stage]
+ → [reserved: future NAM/IR stage]  (Engine::processInsert, a no-op)
  → Delay → Reverb (Cosmos/Shimmer/Abyss/Bloom/Cloud) → width/out/mix
 Modulation: env, pick env, 2 LFOs, random, step seq (polymeter, triplets/quintuplets), 4 macros → 16-slot matrix
 ```
-_(Update with actual source file/class layout.)_
+
+### File layout
+```
+src/params/ParamList.h   GENERATED parameter table (X-macro) -- edit scripts/gen_params.py, then run it
+src/params/Params.*      ParamSpec (ranges/curves/units/sections/tooltips), pid:: indices, choice lists,
+                         note divisions, APVTS layout, value formatting, modDestinations()
+src/dsp/ParamState.h     audio-thread parameter view: smoothing (normalised domain, 20 ms) + modulation per chunk
+src/dsp/ModEngine.h      Lfo, StepSequencer, ModEngine (sources + 16-slot matrix -> normalised offsets)
+src/dsp/Engine.*         complete signal flow (chunks of <= 32 samples), mixer, align delays, bypass
+src/dsp/InputStage.h     gain, 24 dB HPF, gate, envelope follower, onset (pick) detector
+src/dsp/Voicer.h         layer A (+ voicer_tuning constants)
+src/dsp/Spectral.h       layer B (complex FFT, preallocated)
+src/dsp/Resonator.h      layer C (resonator / vocoder / formant, chordNotes(), reso_tuning)
+src/dsp/Granular.h       layer D (grains + stutter)
+src/dsp/MainFilter.h     ladder / SVF / comb / formant + ADAA drive
+src/dsp/Formant.h        3-formant vowel filter (shared)
+src/dsp/AmpShaper.h      pick ADSR, swell, chopper
+src/dsp/StereoDelay.h    delay
+src/dsp/Reverb.h         16-line FDN reverb + pitch shifter (reverb_tuning constants)
+src/dsp/Common.h         helpers: DelayLine, Svf, OnePole, fastTanh, safeLimit, sinCycle, fastAtan2, Rng ...
+src/model/PresetManager.* factory + user presets (.synthia XML in Documents/Synthia/Presets), A/B
+src/model/FactoryPresets.* factory presets as parameter differences to the defaults
+src/model/Randomizer.h   per-section / global randomize with chaos
+src/ui/                  LookAndFeel, Widgets (ParamKnob/Toggle/Combo/DestButton/Meter/SectionPanel),
+                         Pages (Layers, Filter & FX, Modulation incl. StepSeqEditor + MatrixPanel), TopBar
+src/PluginProcessor.*    APVTS + Engine + state (SynthiaState root, stateVersion, migrate()) + latency timer
+src/PluginEditor.*       MainView at design size 1200x790, scaled 75-200 % with an AffineTransform
+tools/Render.cpp         synthia-render CLI     tools/Snapshot.cpp  editor -> PNG (SY_BUILD_TOOLS)
+scripts/gen_params.py    parameter table generator   scripts/mkpreset.py  state file from id=value pairs
+tests/                   Catch2: CoreTests (params, state, fuzz, decay, presets, mod), LayerTests (per layer)
+```
+
+### Key design decisions
+- **Parameters:** ~340, all in the APVTS (incl. step-seq values, chopper steps, chord slots, matrix) so
+  presets/A-B/randomize/state are uniform. Matrix destination = choice index into `modDestinations()`
+  (all modulatable F/I params in table order) -> **append new params at the end of gen_params.py only**.
+- **Modulation** is added in the normalised domain after smoothing; `ParamState::cur()` is the
+  effective value. Per-sample interpolation (`interp`) for gains, pan, cutoff, width, out gain.
+  Mod sources are computed at the end of a chunk and applied in the next one (<= 0.7 ms lag).
+- **Chunking:** everything runs in chunks of <= 32 samples (kChunk). Any host block size works.
+- **Layers off** (On off / mute / level 0 / not soloed) are skipped entirely after a 15 ms fade and
+  reset when re-enabled. Delay/reverb likewise (20 ms fade).
+- **Voicer:** complex two-pole resonator per band (cascade of two identical one-poles), amplitude
+  = 2|y|, phase rate from the smoothed product y[n]·conj(y[n-1]) (atan2 every 4 samples), free-running
+  phase accumulators for main/sub/oct/interval, polyBLEP waveforms, oscillators muted above 0.45 fs.
+  Focus = (a_k / max neighbour)^(6·focus) for non-peaks. Drive + fold oversampled (JUCE IIR polyphase,
+  2x/4x, latency of ~1-3 samples is *not* reported -- the Voicer is a resynthesis, not phase-coherent
+  with the dry). Crush at base rate. Tuning constants: `voicer_tuning` in Voicer.h.
+- **Main filter drive** uses ADAA tanh instead of oversampling (keeps the dry path latency-free).
+- **Spectral:** Hann, hop N/4, latency exactly N. N = 1024/2048/4096 x (1, 2, 4 at >70k / >150k).
+  Phase vocoder only when shift/stretch are active (otherwise the analysis phase is reused ->
+  transparent). Freeze = second spectrum with its own phase accumulators + random drift.
+  Align Spectral: input-stage outputs, analysis taps and the global dry are delayed by N; the
+  processor reports latency from a 10 Hz message-thread timer (`Engine::getDesiredLatency`).
+- **Reverb:** 16 lines, fast Walsh-Hadamard matrix, per-line LP/HP damping, gains from RT60.
+  Shimmer is crossfaded into the loop (energy neutral) + slow tank limiter; with Infinite the
+  shimmer is not fed back (pure freeze) and input is muted. Abyss forces downward shifting.
+- **Granular:** grains never cross the write head; stutter records the slice live at every
+  retrigger point (1/4, 1/2, bar) and repeats it (3 ms seam crossfade).
+- **Resonator:** chords are user-set (chord slots); nothing is detected. String = comb with LP
+  damping + dispersion allpass; Metal/Glass = 4 modes per voice; Bowed = string + input-envelope noise.
+- **Pick detector:** HF (900 Hz HP) fast env vs slow env ratio + floor, both from Pick Sensitivity;
+  retrigger hold. Envelope follower output 0..1 = -60..0 dBFS.
+- **UI scale / chaos** are stored in the session state but not applied from presets or A/B.
 
 ## Rules
 - Real-time safety: no allocation, locks, I/O or logging on the audio thread; preallocate in `prepareToPlay`; `ScopedNoDenormals`; smooth all parameters; any block size / sample rate 44.1–192 kHz.
