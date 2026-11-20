@@ -122,20 +122,57 @@ tests/                   Catch2: CoreTests (params, state, fuzz, decay, presets,
 - Tune DSP with `synthia-render` on test DIs; keep tuning constants centralised and documented. The user judges the sound by ear.
 
 ## Status
-- [ ] M0 Scaffold + CI + passthrough
-- [ ] M1 Core infra (params, input, dry, mixer, filter, amp shaper, delay, mod engine, presets, render CLI, tests)
-- [ ] M2 Voicer
-- [ ] M3 Reverb
-- [ ] M4 Granular
-- [ ] M5 Spectral
-- [ ] M6 Resonator / Vocoder / Formant
-- [ ] M7 Step seq, random, chopper, stutter, mod UI
-- [ ] M8 GUI pass, factory presets, randomize/A-B, performance, user guide
+- [x] M0 Scaffold + CI + passthrough
+- [x] M1 Core infra (params, input, dry, mixer, filter, amp shaper, delay, mod engine, presets, render CLI, tests)
+- [x] M2 Voicer (incl. Quality = Eco/2x/4x oversampling of drive + fold)
+- [x] M3 Reverb (Cosmos/Shimmer/Abyss/Bloom/Cloud)
+- [x] M4 Granular (incl. stutter)
+- [x] M5 Spectral (incl. Align Spectral latency handling)
+- [x] M6 Resonator / Vocoder / Formant (4 chord slots)
+- [x] M7 Step seq (polymeter, triplets/quintuplets, glide), random, chopper, stutter sync, mod UI (rings, seq editor, matrix)
+- [x] M8 GUI pass, 32 factory presets, randomize (global + per section, chaos) / A-B, performance, README user guide
+
+Milestones 1-6 were built in one go (one commit) because the parameter table and engine are
+shared; CI was green after each push (2026-11-20: all jobs incl. auval + pluginval 10).
+
+**Not yet done / next steps**
+- Nobody has played it yet: tune by ear with real DIs (`synthia-render`). Factory preset levels were
+  set on a synthetic Karplus-Strong DI (`scripts/` has no DI; render with your own files).
+- Pick detector thresholds tuned on synthetic plucks only -> check `pickSens` defaults on real DIs.
+- Possible extras: per-band display for the Voicer, spectrum view, MIDI learn, preset tags.
+
+**Performance** (synthia-render, 48 kHz, block 64, RelWithDebInfo, cloud Xeon 2.1 GHz):
+Init (Voicer 48 bands + reverb) ~8 % of one core; all five layers + delay + reverb at defaults ~11 %;
+worst case (72 bands, 4x OS, all voices, 100 grains/s x 500 ms, metal resonators, all FX) ~25 %.
+Apple Silicon / a recent laptop is 2-3x faster per core.
 
 ## Decisions log
 - 2026-11-20: No note detection (user decision) — processing-based synthesis only.
 - 2026-11-20: All layers in v1 (built in milestones). Granular + ambient/shimmer reverb + standard delay (ping-pong, host sync) added by user request.
 - 2026-11-20: NAM/IR stage deferred to a later version.
+- 2026-11-20: JUCE 8.0.15 + Catch2 v3.16.1 like Prog Delay; manufacturer code `Ansc` (shared with IRene/Prog Delay).
+- 2026-11-20: All parameters (incl. step values, chopper steps, chord slots, matrix) live in the APVTS.
+- 2026-11-20: Quality: Eco = no oversampling, Normal = 2x, High = 4x (Voicer drive/fold only);
+  main-filter drive uses ADAA to keep the dry path latency-free.
+- 2026-11-20: Spectral FFT size scales with sample rate; latency = N; Align Spectral default off.
+- 2026-11-20: Reverb = 16-line FDN for every mode (spec allowed 8-16).
+- 2026-11-20: Stutter replaces the grain cloud while on; retrigger every 1/4, 1/2 or bar (extra param `grStutHold`).
+- 2026-11-20: User presets: `Documents/Synthia/Presets/*.synthia` (XML state, also accepted by synthia-render).
 
 ## Known issues / gotchas
-_(none yet)_
+- **Never run a permanent `juce::Timer` in the processor.** On Linux, pluginval (in-process) crashed
+  ~50 % of runs in the host run loop while the processor's 10 Hz latency timer was running. Latency is
+  now reported via an APVTS parameter listener (alignSpec, spSize) + AsyncUpdater.
+- Voicer low bands need time to build up (narrow filters): at default Sharpness the lowest band
+  (~50 Hz) rises in ~50 ms. Lower Sharpness = faster/buzzier. Physics of filter banks, not a bug.
+- Voicer oversampling (IIR polyphase) adds ~1-3 samples group delay that is not reported as latency.
+- Quality changes switch the oversampler instantly (possible tiny click while playing).
+- Reverb Infinite = pure freeze: the shimmer is not fed back while Infinite is on (otherwise it piles up).
+- Synced features use the host position while playing; when stopped they free-run at the host tempo.
+- `restoreState` resets all parameters to defaults before applying a stored tree (missing params ->
+  defaults). UI scale and chaos are only restored from the host session, not from presets/A-B.
+- Factory presets reference parameters by ID; a typo asserts in debug builds and is caught by the
+  "factory presets load and render" test only indirectly -- keep `applyFactoryPreset`'s jassert.
+- `formatValue()` is used by the host for parameter text; keep it allocation-light (message thread only).
+- Non-ASCII UI strings must be written as `juce::CharPointer_UTF8 ("\x..")` (MSVC + JUCE assert).
+- The GUI snapshot tool needs a display: `xvfb-run -a build-dev/SynthiaSnapshot_artefacts/RelWithDebInfo/SynthiaSnapshot out/ "Glass Pad"`.

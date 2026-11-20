@@ -187,6 +187,22 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
     }
     envOut.store (input.envNorm(), std::memory_order_relaxed);
 
+    // Fully bypassed: output the (aligned) input and skip all processing (saves CPU).
+    bypassFade.target = p.on (pid::bypass) ? 1.0f : 0.0f;
+    if (bypassFade.value >= 1.0f && bypassFade.target >= 1.0f)
+    {
+        std::copy (rawL, rawL + n, L);
+        std::copy (rawR, rawR + n, R);
+        for (int i = 0; i < numLayers; ++i)
+        {
+            layerFade[i].value = 0.0f; // layers fade in again after bypass
+            layerRunning[i] = false;
+            layerNeedsReset[i] = true;
+        }
+        mod.advance (n, p, t, anyPick, input.envNorm(), input.pickEnvelope());
+        return;
+    }
+
     ChunkContext ctx { p, t, picks, input.envNorm(), input.envLinear(), input.pickEnvelope(), n, sr };
 
     // ---- layers + mixer
