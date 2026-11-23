@@ -84,6 +84,14 @@ Layers that are switched off cost no CPU.
 - **Filter & FX** – main filter, amp shaper (pick ADSR, swell), 16-step chopper, delay, reverb.
 - **Modulation** – LFOs, random, macros, step sequencer, and the 16-slot matrix.
 
+### Live displays
+Every section shows what it is doing: the **Picks** strip under Input (last 3 s, a white mark per
+detected pick, yellow envelope, dashed gate threshold — use it to set Pick Sens/Retrigger), the
+Voicer's band levels (grey = suppressed by Focus), the spectrum with frozen spectrum and kept
+partials, chord keyboards and resonator voice meters, the granular buffer with every grain, filter
+curve, pick ADSR, chopper playhead, delay echoes, reverb decay, LFO shapes and live matrix activity.
+Displays only run while the window is open and cost no audio CPU otherwise.
+
 ### A — Voicer (the synth)
 The guitar is split into 24–72 narrow bands; every band drives its own oscillator at the band's
 instantaneous frequency. **Wave** morphs sine → saw → square → pulse; **Sub**, **Oct Up** and

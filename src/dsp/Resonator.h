@@ -13,6 +13,7 @@
 #include "dsp/Common.h"
 #include "dsp/Formant.h"
 #include "dsp/Layer.h"
+#include "dsp/VizData.h"
 
 namespace synthia::dsp
 {
@@ -71,6 +72,7 @@ public:
         formL.prepare (sr);
         formR.prepare (sr);
         exciteHp.setup (80.0f, sr);
+        voiceDecay = onePoleCoef (120.0f, sr);
         glideCoef = onePoleCoef (20.0f, sr);
         rng.seed (0xC0FFEEu);
         reset();
@@ -153,7 +155,18 @@ public:
             outL[s] = sanitize (tmpL[s] * fade);
             outR[s] = sanitize (tmpR[s] * fade);
         }
+        if (viz != nullptr && viz->active.load (std::memory_order_relaxed))
+        {
+            viz->rsVoices.store (lastMode == 0 ? numVoices : 0, std::memory_order_relaxed);
+            for (int v = 0; v < reso_tuning::kMaxVoices; ++v)
+            {
+                if (lastMode != 0) voiceLevel[v] = 0.0f;
+                viz->rsVoice[(size_t) v].store (voiceLevel[v] * fade, std::memory_order_relaxed);
+            }
+        }
     }
+
+    void setViz (VizData* v) noexcept { viz = v; }
 
 private:
     void softResetModeState() noexcept
@@ -247,6 +260,7 @@ private:
                     comb[v].push (safeLimit (e + g * apOut, 1.0f, 2.0f));
                     y = apOut;
                 }
+                voiceLevel[v] = std::max (std::abs (y), voiceLevel[v] * voiceDecay);
                 const float pan = (v & 1) ? 0.6f : -0.6f;
                 l += y * (1.0f - std::max (0.0f, pan));
                 r += y * (1.0f + std::min (0.0f, pan));
@@ -379,5 +393,8 @@ private:
     bool fadingOut = false;
     float fade = 0.0f;
     Rng rng;
+    VizData* viz = nullptr;
+    float voiceLevel[reso_tuning::kMaxVoices] {};
+    float voiceDecay = 0.999f;
 };
 } // namespace synthia::dsp

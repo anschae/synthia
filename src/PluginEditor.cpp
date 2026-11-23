@@ -67,12 +67,14 @@ SynthiaEditor::SynthiaEditor (SynthiaProcessor& p) : AudioProcessorEditor (p), p
     setResizable (true, true);
     const float s = juce::jlimit (0.75f, 2.0f, proc.uiScale);
     setSize (juce::roundToInt (theme::kDesignW * s), juce::roundToInt (theme::kDesignH * s));
-    lastPickCount = proc.engine.pickCount.load();
+    proc.engine.viz.active.store (true);
     startTimerHz (30);
 }
 
 SynthiaEditor::~SynthiaEditor()
 {
+    stopTimer();
+    proc.engine.viz.active.store (false);
     proc.presets.onChange = nullptr;
     tooltips.setLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
@@ -114,15 +116,19 @@ void SynthiaEditor::timerCallback()
     for (auto* k : view.knobsOnPage[view.currentPage()])
         k->setModNorm (e.params.uiModulatedNorm (k->getIndex()));
 
-    const int pc = e.pickCount.load();
-    if (pc != lastPickCount) { lastPickCount = pc; pickFlash = 1.0f; }
-    else pickFlash *= 0.8f;
-    if (view.currentPage() == 0)
+    switch (view.currentPage())
     {
-        view.layers.setPickFlash (pickFlash);
-        view.layers.updateModeDimming();
+        case 0:
+            view.layers.updateModeDimming();
+            view.layers.tick();
+            break;
+        case 1:
+            view.fx.tick();
+            break;
+        default:
+            view.mod.setPlayingStep (e.mod.uiStep.load());
+            view.mod.tick();
+            break;
     }
-    if (view.currentPage() == 2)
-        view.mod.setPlayingStep (e.mod.uiStep.load());
 }
 } // namespace synthia

@@ -28,6 +28,12 @@ void Engine::prepare (double sampleRate, int)
     mod.prepare (sr);
     input.prepare (sr);
     voicer.prepare (sr);
+    voicer.setViz (&viz);
+    spectral.setViz (&viz);
+    reso.setViz (&viz);
+    granular.setViz (&viz);
+    tlColLen = VizData::kTimelineSeconds * sr / VizData::kTimelineVisible;
+    tlCount = 0.0;
     spectral.prepare (sr);
     reso.prepare (sr);
     granular.prepare (sr);
@@ -104,6 +110,7 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
     juce::ignoreUnused (numInputChannels);
     // ---- parameters (+ modulation computed at the end of the previous chunk)
     params.beginChunk (n, mod.modOffsets());
+    const bool vizOn = viz.active.load (std::memory_order_relaxed);
     const auto& p = params;
 
     // ---- transport
@@ -177,7 +184,25 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
         }
         picks[s] = input.analyse (mono[s]);
         anyPick = anyPick || picks[s];
+        if (vizOn)
+        {
+            tlPeak = std::max (tlPeak, std::abs (mono[s]));
+            tlPick = tlPick || picks[s];
+            if (++tlCount >= tlColLen)
+            {
+                tlCount -= tlColLen;
+                const int w = viz.tlWrite.load (std::memory_order_relaxed);
+                viz.tlPeak[(size_t) w].store (tlPeak, std::memory_order_relaxed);
+                viz.tlEnv[(size_t) w].store (input.envLinear(), std::memory_order_relaxed);
+                viz.tlPick[(size_t) w].store (tlPick ? 1 : 0, std::memory_order_relaxed);
+                viz.tlWrite.store ((w + 1) % VizData::kTimelineCols, std::memory_order_relaxed);
+                tlPeak = 0.0f;
+                tlPick = false;
+            }
+        }
     }
+    if (vizOn)
+        viz.gateThreshold.store (p.on (pid::gateOn) ? dbToGain (p.cur (pid::gateThr)) : 0.0f, std::memory_order_relaxed);
     if (anyPick)
         pickCount.fetch_add (1, std::memory_order_relaxed);
     {
@@ -280,6 +305,11 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
     amp.setChunk (ams);
     const float pickEnvNow = input.pickEnvelope();
     const float envNow = input.envNorm();
+    if (vizOn)
+    {
+        viz.fltCutoff.store (clamp (p.cur (pid::fltCut) * std::exp2 (4.0f * (envAmt * envNow + pickAmt * pickEnvNow)), 20.0f, 20000.0f),
+                             std::memory_order_relaxed);
+    }
     for (int s = 0; s < n; ++s)
     {
         float l = busFL[s], r = busFR[s];
@@ -292,6 +322,13 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
         const float g = amp.next (picks[s], input.envLinear(), t.ppq + (double) s / spq);
         L[s] = l * g + busBL[s];
         R[s] = r * g + busBR[s];
+    }
+
+    if (vizOn)
+    {
+        viz.adsrLevel.store (amp.adsrLevel(), std::memory_order_relaxed);
+        viz.adsrStage.store (amp.stageIndex(), std::memory_order_relaxed);
+        viz.chopStep.store (ams.chopOn ? amp.lastStep() : -1, std::memory_order_relaxed);
     }
 
     // ---- reserved insert point (future NAM / IR amp stage)
@@ -392,5 +429,10 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
 
     // ---- modulation for the next chunk
     mod.advance (n, p, t, anyPick, input.envNorm(), input.pickEnvelope());
+    if (vizOn)
+    {
+        viz.lfo1Phase.store (mod.lfoPhase (0), std::memory_order_relaxed);
+        viz.lfo2Phase.store (mod.lfoPhase (1), std::memory_order_relaxed);
+    }
 }
 } // namespace synthia::dsp

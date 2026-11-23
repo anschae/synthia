@@ -17,6 +17,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "dsp/Common.h"
 #include "dsp/Layer.h"
+#include "dsp/VizData.h"
 
 namespace synthia::dsp
 {
@@ -254,7 +255,21 @@ public:
             outL[s] = sanitize (outL[s]);
             outR[s] = sanitize (outR[s]);
         }
+
+        if (viz != nullptr && viz->active.load (std::memory_order_relaxed))
+        {
+            viz->vcBands.store (K, std::memory_order_relaxed);
+            viz->vcLo.store (lastLo, std::memory_order_relaxed);
+            viz->vcHi.store (lastHi, std::memory_order_relaxed);
+            for (int k = 0; k < K; ++k)
+            {
+                viz->vcAmp[(size_t) k].store (amp[k], std::memory_order_relaxed);
+                viz->vcWeight[(size_t) k].store (w[k], std::memory_order_relaxed);
+            }
+        }
     }
+
+    void setViz (VizData* v) noexcept { viz = v; }
 
     int getNumBands() const noexcept { return numBands; }
     float getBandCentreHz (int k) const noexcept { return centreHz[k]; }
@@ -381,5 +396,6 @@ private:
     float crushHeldL = 0, crushHeldR = 0, crushPhase = 0;
     Rng rng;
     std::unique_ptr<juce::dsp::Oversampling<float>> os2, os4;
+    VizData* viz = nullptr;
 };
 } // namespace synthia::dsp

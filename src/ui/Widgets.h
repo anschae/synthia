@@ -117,6 +117,10 @@ public:
     /** Adds an arbitrary component spanning `span` cells. */
     void addCustom (juce::Component* c, int span, int rows = 1);
     void caption (const juce::String& text) { pendingCaption = text; }
+    /** A component below the last row, filling the rest of the panel (not owned). */
+    void setFooter (juce::Component* c) { footer = c; addAndMakeVisible (c); }
+    /** A component to the right of the last control in `row`, spanning that row (not owned). */
+    void addSide (juce::Component* c, int row) { sides.push_back ({ c, row }); addAndMakeVisible (c); }
     void newRow() { pendingNewRow = true; }
 
     int rowsUsed() const;
@@ -146,6 +150,8 @@ private:
     std::vector<Item> items;
     juce::String pendingCaption;
     bool pendingNewRow = false;
+    juce::Component* footer = nullptr;
+    std::vector<std::pair<juce::Component*, int>> sides;
     juce::TextButton diceButton { "Rnd" };
 };
 } // namespace synthia

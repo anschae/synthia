@@ -215,8 +215,87 @@ void fillGranular (SectionPanel& s)
 }
 } // namespace
 
+namespace
+{
+/** One chord slot: root/type combos, octave/spread knobs and a mini keyboard. */
+class ChordCard : public juce::Component
+{
+public:
+    ChordCard (SynthiaProcessor& p, int slot, std::vector<ParamKnob*>& knobs)
+        : proc (p), n (slot), root (p, pid::c1Root + slot * 4, "Root"), type (p, pid::c1Root + slot * 4 + 1, "Type"),
+          oct (p, pid::c1Root + slot * 4 + 2, theme::reso, "Octave"), spread (p, pid::c1Root + slot * 4 + 3, theme::reso, "Spread"),
+          keyboard (p, slot)
+    {
+        for (juce::Component* c : { (juce::Component*) &root, (juce::Component*) &type, (juce::Component*) &oct,
+                                    (juce::Component*) &spread, (juce::Component*) &keyboard })
+            addAndMakeVisible (c);
+        knobs.push_back (&oct);
+        knobs.push_back (&spread);
+    }
+    ChordKeyboard& getKeyboard() { return keyboard; }
+    void paint (juce::Graphics& g) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (juce::Colour (0xff14161c));
+        g.fillRoundedRectangle (r, 6.0f);
+        g.setColour (juce::Colour (0xff2c2f3a));
+        g.drawRoundedRectangle (r, 6.0f, 1.0f);
+        g.setColour (theme::text);
+        g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+        g.drawText ("Chord " + juce::String (n + 1), 10, 4, 100, 16, juce::Justification::centredLeft);
+    }
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (8, 4);
+        r.removeFromTop (18);
+        auto top = r.removeFromTop (46);
+        oct.setBounds (top.removeFromRight (50));
+        spread.setBounds (top.removeFromRight (50));
+        root.setBounds (top.removeFromLeft (62).withTrimmedRight (4));
+        type.setBounds (top.withTrimmedRight (4));
+        r.removeFromTop (6);
+        keyboard.setBounds (r.reduced (2, 2));
+    }
+
+private:
+    SynthiaProcessor& proc;
+    int n;
+    ParamCombo root, type;
+    ParamKnob oct, spread;
+    ChordKeyboard keyboard;
+};
+
+class ResoFooter : public juce::Component
+{
+public:
+    ResoFooter (SynthiaProcessor& p, std::vector<ParamKnob*>& knobs) : voices (p), vowels (p)
+    {
+        for (int i = 0; i < 4; ++i)
+            addAndMakeVisible (cards.add (new ChordCard (p, i, knobs)));
+        addAndMakeVisible (voices);
+        addAndMakeVisible (vowels);
+    }
+    void resized() override
+    {
+        auto r = getLocalBounds();
+        auto top = r.removeFromTop (juce::jmin (150, r.getHeight() / 2 + 20));
+        const int w = (top.getWidth() - 3 * 8) / 4;
+        for (int i = 0; i < 4; ++i)
+            cards[i]->setBounds (top.getX() + i * (w + 8), top.getY(), w, top.getHeight());
+        r.removeFromTop (8);
+        voices.setBounds (r.removeFromLeft (r.getWidth() / 2 - 4));
+        r.removeFromLeft (8);
+        vowels.setBounds (r);
+    }
+    juce::OwnedArray<ChordCard> cards;
+    ResoVoices voices;
+    VowelMap vowels;
+};
+} // namespace
+
 LayersPage::LayersPage (SynthiaProcessor& p)
-    : proc (p), inputPanel (p, "Input", theme::input), master (p, "Output", theme::dry)
+    : proc (p), inputPanel (p, "Input", theme::input), master (p, "Output", theme::dry),
+      pickTimeline (p), voicerBands (p), spectrum (p), granView (p)
 {
     inputPanel.add (pid::inGain, "Gain");
     inputPanel.add (pid::hpf);
@@ -256,16 +335,22 @@ LayersPage::LayersPage (SynthiaProcessor& p)
                      s.add (pid::vcoNoise, "Noise"), s.add (pid::vcoFormant, "Formant"), s.add (pid::vcoRelease, "Release") };
         s.caption ("Formant");
         formGroup = { s.add (pid::fmVowel), s.add (pid::fmReso, "Reso"), s.add (pid::fmShift) };
-        for (int c = 0; c < 4; ++c)
-        {
-            if ((c & 1) == 0) s.newRow();
-            s.caption ("Chord " + juce::String (c + 1));
-            const int b = pid::c1Root + c * 4;
-            s.add (b, "Root"); s.add (b + 1, "Type"); s.add (b + 2, "Octave"); s.add (b + 3, "Spread");
-        }
     }
     fillGranular (*layerPanels[3]);
     layerPanels[4]->add (pid::dryTilt, "Tilt");
+
+    addAndMakeVisible (pickTimeline);
+    layerPanels[0]->setFooter (&voicerBands);
+    layerPanels[1]->setFooter (&spectrum);
+    layerPanels[3]->setFooter (&granView);
+    {
+        auto* f = new ResoFooter (p, layerPanels[2]->knobs);
+        for (auto* c : f->cards) keyboards.push_back (&c->getKeyboard());
+        resoVoices = &f->voices;
+        vowelMap = &f->vowels;
+        resoFooter.reset (f);
+        layerPanels[2]->setFooter (f);
+    }
 
     for (auto* sp : panels())
         sp->onRandomize = nullptr; // set by the editor
@@ -319,17 +404,17 @@ void LayersPage::updateModeDimming()
     for (auto* c : formGroup) c->setAlpha (mode == 2 ? 1.0f : 0.35f);
 }
 
-void LayersPage::paint (juce::Graphics& g)
+void LayersPage::paint (juce::Graphics&) {}
+
+void LayersPage::tick()
 {
-    // pick LED under the input panel
-    auto r = pickLed.toFloat();
-    g.setColour (theme::knobBg);
-    g.fillEllipse (r);
-    g.setColour (theme::input.interpolatedWith (juce::Colours::white, 0.5f).withAlpha (juce::jlimit (0.0f, 1.0f, pickFlash)));
-    g.fillEllipse (r.reduced (1.5f));
-    g.setColour (theme::textDim);
-    g.setFont (juce::FontOptions (11.0f));
-    g.drawText ("Pick", pickLed.getRight() + 6, pickLed.getY() - 2, 60, pickLed.getHeight() + 4, juce::Justification::centredLeft);
+    pickTimeline.tick();
+    voicerBands.tick();
+    spectrum.tick();
+    granView.tick();
+    for (auto* k : keyboards) k->tick();
+    if (resoVoices != nullptr) resoVoices->tick();
+    if (vowelMap != nullptr) vowelMap->tick();
 }
 
 void LayersPage::resized()
@@ -338,7 +423,7 @@ void LayersPage::resized()
     const int stripY = getHeight() - stripH - 8;
     inputPanel.setBounds (8, 8, 204, 0);
     inputPanel.setBounds (8, 8, 204, juce::jmin (stripY - 16, inputPanel.preferredHeight()));
-    pickLed = { 18, inputPanel.getBottom() + 12, 12, 12 };
+    pickTimeline.setBounds (8, inputPanel.getBottom() + 8, 204, stripY - 8 - (inputPanel.getBottom() + 8));
 
     const int x0 = 220, w = getWidth() - x0 - 8;
     const int tabW = w / 5;
@@ -360,7 +445,7 @@ namespace
 class ChopperSteps : public juce::Component
 {
 public:
-    explicit ChopperSteps (SynthiaProcessor& p)
+    explicit ChopperSteps (SynthiaProcessor& p) : viz (p.engine.viz)
     {
         for (int i = 0; i < 16; ++i)
         {
@@ -377,8 +462,23 @@ public:
                                        .withTrimmedRight (i % 4 == 3 ? -3 : 0));
     }
 
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        const int st = viz.chopStep.load();
+        if (st < 0 || st >= 16) return;
+        g.setColour (juce::Colours::white);
+        g.drawRoundedRectangle (toggles[st]->getBounds().toFloat().expanded (1.5f), 5.0f, 2.0f);
+    }
+    void tick()
+    {
+        const int st = viz.chopStep.load();
+        if (st != lastStep && isShowing()) { lastStep = st; repaint(); }
+    }
+
 private:
+    dsp::VizData& viz;
     juce::OwnedArray<ParamToggle> toggles;
+    int lastStep = -2;
 };
 } // namespace
 
@@ -387,7 +487,8 @@ FxPage::FxPage (SynthiaProcessor& p)
       amp (p, "Amp Shaper", theme::filter, Section::amp, true),
       chopper (p, "Chopper (16 steps, host synced)", theme::filter),
       delay (p, "Delay", theme::fx, Section::delay, true),
-      reverb (p, "Reverb", theme::fx, Section::reverb, true)
+      reverb (p, "Reverb", theme::fx, Section::reverb, true),
+      filterCurve (p), adsrView (p), delayView (p), reverbView (p)
 {
     filter.add (pid::fltOn, "On"); filter.add (pid::fltType, "Type"); filter.add (pid::fltCut); filter.add (pid::fltRes);
     filter.add (pid::fltDrive, "Drive"); filter.add (pid::fltEnv, "Env Amt"); filter.add (pid::fltPick, "Pick Amt");
@@ -395,7 +496,8 @@ FxPage::FxPage (SynthiaProcessor& p)
     amp.caption ("Swell"); amp.add (pid::swellOn, "Swell"); amp.add (pid::swellTime, "Time");
     chopper.add (pid::chopOn, "On"); chopper.add (pid::chopDiv, "Rate"); chopper.add (pid::chopDepth, "Depth"); chopper.add (pid::chopSmooth, "Smooth");
     chopper.caption ("Steps");
-    chopper.addCustom (new ChopperSteps (p), 12);
+    chopSteps = new ChopperSteps (p);
+    chopper.addCustom (chopSteps, 12);
     delay.add (pid::dlyOn, "On"); delay.add (pid::dlySync, "Sync"); delay.add (pid::dlyTime, "Time"); delay.add (pid::dlyDiv, "Note");
     delay.add (pid::dlyFb, "Feedback"); delay.add (pid::dlyMix, "Mix"); delay.add (pid::dlyPing, "Ping");
     delay.caption ("Feedback tone"); delay.add (pid::dlyLow, "Low Cut"); delay.add (pid::dlyHigh, "High Cut");
@@ -409,6 +511,19 @@ FxPage::FxPage (SynthiaProcessor& p)
     reverb.caption ("Output"); reverb.add (pid::rvDuck); reverb.add (pid::rvWidth, "Width"); reverb.add (pid::rvMix, "Mix");
     for (auto* c : panels())
         addAndMakeVisible (c);
+    filter.setFooter (&filterCurve);
+    amp.setFooter (&adsrView);
+    delay.addSide (&delayView, 0);
+    reverb.addSide (&reverbView, 1);
+}
+
+void FxPage::tick()
+{
+    filterCurve.tick();
+    adsrView.tick();
+    delayView.tick();
+    reverbView.tick();
+    if (auto* c = dynamic_cast<ChopperSteps*> (chopSteps)) c->tick();
 }
 
 std::vector<ParamKnob*> FxPage::allKnobs()
@@ -424,15 +539,14 @@ void FxPage::resized()
     const int w = getWidth() - 16;
     const int rowH = SectionPanel::kTitleH + SectionPanel::kCellH + SectionPanel::kCaptionH + 6;
     int y = 8;
-    filter.setBounds (8, y, 8 * 64 + 12, rowH);
-    amp.setBounds (filter.getRight() + 8, y, w - filter.getWidth() - 8, rowH);
-    y += rowH + 8;
+    filter.setBounds (8, y, 528, 206);
+    amp.setBounds (filter.getRight() + 8, y, w - filter.getWidth() - 8, 206);
+    y += 206 + 8;
     chopper.setBounds (8, y, w, rowH);
     y += rowH + 8;
     delay.setBounds (8, y, w, rowH);
     y += rowH + 8;
-    reverb.setBounds (8, y, w, 0);
-    reverb.setBounds (8, y, w, reverb.preferredHeight());
+    reverb.setBounds (8, y, w, juce::jmax (reverb.preferredHeight(), getHeight() - y - 8));
 }
 
 // ============================================================================ MatrixPanel
@@ -442,7 +556,7 @@ class MatrixRow : public juce::Component
 {
 public:
     MatrixRow (SynthiaProcessor& p, int slot)
-        : n (slot), src (p, pid::m1Src + slot * 4), dst (p, pid::m1Src + slot * 4 + 1),
+        : proc (p), n (slot), src (p, pid::m1Src + slot * 4), dst (p, pid::m1Src + slot * 4 + 1),
           amt (p, pid::m1Src + slot * 4 + 2, theme::modc), via (p, pid::m1Src + slot * 4 + 3)
     {
         for (juce::Component* c : { (juce::Component*) &src, (juce::Component*) &dst, (juce::Component*) &amt, (juce::Component*) &via })
@@ -453,13 +567,32 @@ public:
     {
         g.setColour (theme::textDim);
         g.setFont (juce::FontOptions (11.0f));
-        g.drawText (juce::String (n + 1), 0, 0, 22, getHeight(), juce::Justification::centred);
+        g.drawText (juce::String (n + 1), 0, 0, 18, getHeight(), juce::Justification::centred);
+        // live activity of this slot: |source x amount|
+        const int base = pid::m1Src + n * 4;
+        const int source = juce::roundToInt (proc.getParam (base));
+        const bool live = source > 0 && juce::roundToInt (proc.getParam (base + 1)) > 0;
+        float v = 0.0f;
+        if (live && source < modsrc::count)
+            v = juce::jlimit (0.0f, 1.0f, std::abs (proc.engine.mod.uiSource[(size_t) source].load() * proc.getParam (base + 2)));
+        const float cy = (float) getHeight() * 0.5f;
+        g.setColour (live ? theme::mod.withAlpha (0.35f + 0.65f * v) : theme::knobBg);
+        g.fillEllipse (19.0f, cy - 4.0f, 8.0f, 8.0f);
+        auto meter = juce::Rectangle<float> ((float) getWidth() - 40.0f, cy - 3.0f, 38.0f, 6.0f);
+        g.setColour (theme::knobBg);
+        g.fillRoundedRectangle (meter, 3.0f);
+        if (live)
+        {
+            g.setColour (theme::mod);
+            g.fillRoundedRectangle (meter.withWidth (meter.getWidth() * v), 3.0f);
+        }
     }
     void resized() override
     {
         auto r = getLocalBounds().reduced (0, 2);
-        r.removeFromLeft (24);
-        src.setBounds (r.removeFromLeft (118));
+        r.removeFromLeft (30);
+        r.removeFromRight (46);
+        src.setBounds (r.removeFromLeft (112));
         r.removeFromLeft (6);
         dst.setBounds (r.removeFromLeft (170));
         r.removeFromLeft (6);
@@ -469,6 +602,7 @@ public:
     }
 
 private:
+    SynthiaProcessor& proc;
     int n;
     ParamCombo src;
     DestButton dst;
@@ -501,10 +635,11 @@ void MatrixPanel::paint (juce::Graphics& g)
     for (int c = 0; c < 2; ++c)
     {
         const int x = 8 + c * (colW + 8);
-        g.drawText ("Source", x + 24, 24, 118, 14, juce::Justification::centredLeft);
+        g.drawText ("Source", x + 30, 24, 112, 14, juce::Justification::centredLeft);
         g.drawText ("Destination", x + 148, 24, 170, 14, juce::Justification::centredLeft);
-        g.drawText ("Amount", x + 324, 24, 120, 14, juce::Justification::centredLeft);
-        g.drawText ("Via (scaler)", x + colW - 100, 24, 100, 14, juce::Justification::centredLeft);
+        g.drawText ("Amount", x + 324, 24, 100, 14, juce::Justification::centredLeft);
+        g.drawText ("Via (scaler)", x + colW - 146, 24, 100, 14, juce::Justification::centredLeft);
+        g.drawText ("Live", x + colW - 40, 24, 40, 14, juce::Justification::centredLeft);
     }
 }
 
@@ -522,7 +657,8 @@ void MatrixPanel::resized()
 // ============================================================================ ModPage
 ModPage::ModPage (SynthiaProcessor& p)
     : lfo1 (p, "LFO 1", theme::modc, Section::count), lfo2 (p, "LFO 2", theme::modc), random (p, "Random", theme::modc),
-      macros (p, "Macros", theme::modc), seqPanel (p, "Step Sequencer", theme::modc), seqEditor (p), matrix (p)
+      macros (p, "Macros", theme::modc), seqPanel (p, "Step Sequencer", theme::modc), lfoView1 (p, 0), lfoView2 (p, 1),
+      seqEditor (p), matrix (p)
 {
     for (int n = 0; n < 2; ++n)
     {
@@ -537,6 +673,8 @@ ModPage::ModPage (SynthiaProcessor& p)
         addAndMakeVisible (c);
     addAndMakeVisible (seqEditor);
     addAndMakeVisible (matrix);
+    lfo1.setFooter (&lfoView1);
+    lfo2.setFooter (&lfoView2);
 }
 
 std::vector<ParamKnob*> ModPage::allKnobs()
@@ -554,15 +692,15 @@ void ModPage::resized()
     const int rowH = SectionPanel::kTitleH + SectionPanel::kCellH + SectionPanel::kCaptionH + 6;
     const int w = getWidth() - 16;
     int y = 8;
-    lfo1.setBounds (8, y, w / 2 - 4, rowH);
-    lfo2.setBounds (8 + w / 2 + 4, y, w / 2 - 4, rowH);
-    y += rowH + 8;
+    lfo1.setBounds (8, y, w / 2 - 4, 172);
+    lfo2.setBounds (8 + w / 2 + 4, y, w / 2 - 4, 172);
+    y += 172 + 8;
     random.setBounds (8, y, 6 * 64 + 12, rowH);
     macros.setBounds (random.getRight() + 8, y, 4 * 64 + 12, rowH);
     seqPanel.setBounds (macros.getRight() + 8, y, getWidth() - 8 - (macros.getRight() + 8), rowH);
     y += rowH + 8;
-    seqEditor.setBounds (8, y, w, 132);
-    y += 140;
+    seqEditor.setBounds (8, y, w, 118);
+    y += 126;
     matrix.setBounds (8, y, w, getHeight() - y - 8);
 }
 } // namespace synthia

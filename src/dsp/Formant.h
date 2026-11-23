@@ -12,8 +12,8 @@ public:
     void prepare (double sampleRate) noexcept { sr = sampleRate; reset(); setVowel (0, 0, 0.5f); }
     void reset() noexcept { for (auto& f : bands) f.reset(); }
 
-    /** pos 0..4 (A E I O U), shift in semitones, res 0..1. */
-    void setVowel (float pos, float shiftSemis, float res) noexcept
+    /** Formant frequencies (Hz), linear gains and bandwidths (Hz) for a vowel position. Also used by the UI. */
+    static void formants (float pos, float shiftSemis, float res, float* freq, float* gain, float* bandwidth) noexcept
     {
         // Formant frequencies / gains (dB) / bandwidths, roughly after Peterson & Barney
         // (male voice), softened a bit so they work musically on guitar.
@@ -27,11 +27,21 @@ public:
         const float bwScale = lerp (2.6f, 0.35f, clamp (res, 0.0f, 1.0f));
         for (int k = 0; k < 3; ++k)
         {
-            const float f = std::exp (lerp (std::log (F[i0][k]), std::log (F[i0 + 1][k]), t)) * shift;
-            const float g = dbToGain (lerp (G[i0][k], G[i0 + 1][k], t));
-            const float bw = lerp (B[i0][k], B[i0 + 1][k], t) * bwScale * std::sqrt (shift);
-            bands[k].setup (f, std::max (0.5f, f / bw), sr);
-            gains[k] = g * bands[k].k; // k * bp = unity peak
+            freq[k] = std::exp (lerp (std::log (F[i0][k]), std::log (F[i0 + 1][k]), t)) * shift;
+            gain[k] = dbToGain (lerp (G[i0][k], G[i0 + 1][k], t));
+            bandwidth[k] = lerp (B[i0][k], B[i0 + 1][k], t) * bwScale * std::sqrt (shift);
+        }
+    }
+
+    /** pos 0..4 (A E I O U), shift in semitones, res 0..1. */
+    void setVowel (float pos, float shiftSemis, float res) noexcept
+    {
+        float fr[3], g[3], bw[3];
+        formants (pos, shiftSemis, res, fr, g, bw);
+        for (int k = 0; k < 3; ++k)
+        {
+            bands[k].setup (fr[k], std::max (0.5f, fr[k] / bw[k]), sr);
+            gains[k] = g[k] * bands[k].k; // k * bp = unity peak
         }
         makeup = 1.0f + res * 1.5f;
     }

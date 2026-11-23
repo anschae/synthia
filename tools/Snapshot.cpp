@@ -46,36 +46,60 @@ int main (int argc, char* argv[])
     synthia::SynthiaProcessor proc;
     if (argc > 2)
         proc.presets.loadFactory (argv[2]);
+    // dev tool: switch every layer on so each tab shows live data
+    for (int prm : { synthia::pid::vcOn, synthia::pid::spOn, synthia::pid::rsOn, synthia::pid::grOn })
+        proc.setParam (prm, 1.0f);
+    proc.setParam (synthia::pid::spFreeze, 0.0f);
     proc.prepareToPlay (48000.0, 512);
-    juce::AudioBuffer<float> buf (2, 512);
-    juce::MidiBuffer midi;
-    juce::Random rng (1);
-    for (int b = 0; b < 100; ++b)
-    {
-        for (int ch = 0; ch < 2; ++ch)
-            for (int i = 0; i < 512; ++i)
-                buf.setSample (ch, i, (b % 20 < 3) ? (rng.nextFloat() - 0.5f) * 0.8f : 0.0f);
-        proc.processBlock (buf, midi);
-    }
-
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     auto* editor = dynamic_cast<synthia::SynthiaEditor*> (ed.get());
     if (argc > 3)
         editor->setScale ((float) juce::String (argv[3]).getDoubleValue());
     editor->setVisible (true);
+
+    // Feed plucked notes (F#1 power chord, then single notes) so the live displays have data.
+    double t = 0.0;
+    auto feed = [&] (double seconds)
+    {
+        juce::AudioBuffer<float> buf (2, 512);
+        juce::MidiBuffer midi;
+        const double sr = 48000.0;
+        const double notes[] = { 46.25, 69.3, 92.5 };
+        for (int b = 0; b < (int) (seconds * sr / 512); ++b)
+        {
+            for (int i = 0; i < 512; ++i, t += 1.0 / sr)
+            {
+                const double period = 0.6;
+                const double tl = std::fmod (t, period);
+                const double env = std::exp (-tl * 3.0);
+                double v = 0.0;
+                for (double n0 : notes)
+                    for (int h = 1; h <= 10; ++h)
+                        v += std::sin (juce::MathConstants<double>::twoPi * n0 * h * t) / (h * 1.3);
+                const float x = (float) (0.12 * env * v);
+                buf.setSample (0, i, x);
+                buf.setSample (1, i, x);
+            }
+            proc.processBlock (buf, midi);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+        }
+    };
     pump (300);
     auto& v = editor->getView();
     for (int layer = 0; layer < 5; ++layer)
     {
         v.showPage (0);
         v.layers.selectLayer (layer);
+        feed (2.5);
         pump (100);
         save (*editor, out.getChildFile ("layers_" + juce::String (layer) + ".png"));
     }
     v.showPage (1);
+    feed (1.5);
     pump (100);
     save (*editor, out.getChildFile ("fx.png"));
     v.showPage (2);
+    feed (1.5);
     pump (100);
     save (*editor, out.getChildFile ("mod.png"));
     return 0;

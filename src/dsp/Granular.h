@@ -11,6 +11,7 @@
 #include <array>
 #include "dsp/Common.h"
 #include "dsp/Layer.h"
+#include "dsp/VizData.h"
 
 namespace synthia::dsp
 {
@@ -26,6 +27,7 @@ public:
         sr = sampleRate;
         bufLen = (int) (kBufferSeconds * sr) + 16;
         buf.assign ((size_t) bufLen, 0.0f);
+        colLen = (double) bufLen / (double) VizData::kGrCols;
         for (int w = 0; w < 3; ++w)
             for (int i = 0; i <= kWindowTable; ++i)
             {
@@ -78,6 +80,7 @@ public:
         const int sliceLen = std::max (16, std::min (bufLen / 2, (int) (sliceQ * spq)));
         const float xfade = std::min ((float) sliceLen * 0.25f, 0.003f * (float) sr);
 
+        const bool vizOn = viz != nullptr && viz->active.load (std::memory_order_relaxed);
         const int grainLen = std::max (16, (int) (sizeMs * 0.001f * (float) sr));
         const double interval = sr / std::max (0.1f, density);
         const float norm = 1.0f / std::sqrt (std::max (1.0f, density * sizeMs * 0.001f));
@@ -150,6 +153,17 @@ public:
                 if (fb > 0.0001f && ! stutActive)
                     w += fb * safeLimit (0.5f * (gl + gr), 0.7f, 1.0f);
                 buf[(size_t) writePos] = sanitize (w);
+                if (vizOn)
+                {
+                    const int col = std::min (VizData::kGrCols - 1, (int) ((double) writePos / colLen));
+                    if (col != vizCol)
+                    {
+                        viz->grCol[(size_t) vizCol].store (vizColPeak, std::memory_order_relaxed);
+                        vizCol = col;
+                        vizColPeak = 0.0f;
+                    }
+                    vizColPeak = std::max (vizColPeak, std::abs (w));
+                }
                 // The 8 s buffer is much longer than any slice, so the slice being
                 // repeated is never overwritten while the stutter runs.
                 writePos = wrap (writePos + 1);
@@ -166,7 +180,12 @@ public:
                 outR[s] = sanitize (gr);
             }
         }
+
+        if (vizOn)
+            publish (freeze, sliceLen);
     }
+
+    void setViz (VizData* v) noexcept { viz = v; }
 
     int activeGrains() const noexcept
     {
@@ -181,8 +200,40 @@ private:
         bool active = false;
         double pos = 0, inc = 1;
         int len = 1, age = 0, window = 0;
-        float panL = 1, panR = 1, gain = 1;
+        float panL = 1, panR = 1, gain = 1, semis = 0;
     };
+
+    void publish (bool freeze, int sliceLen) noexcept
+    {
+        viz->grCol[(size_t) vizCol].store (vizColPeak, std::memory_order_relaxed);
+        viz->grWriteCol.store (vizCol, std::memory_order_relaxed);
+        viz->grBufferSeconds.store ((float) ((double) bufLen / sr), std::memory_order_relaxed);
+        viz->grFrozen.store (freeze ? 1 : 0, std::memory_order_relaxed);
+        for (int i = 0; i < kMaxGrains; ++i)
+        {
+            const auto& g = grains[i];
+            auto& vg = viz->grains[(size_t) i];
+            if (! g.active)
+            {
+                vg.flags.store (0, std::memory_order_relaxed);
+                continue;
+            }
+            double d = (double) writePos - g.pos;
+            while (d < 0.0) d += (double) bufLen;
+            while (d >= (double) bufLen) d -= (double) bufLen;
+            vg.delaySec.store ((float) (d / sr), std::memory_order_relaxed);
+            vg.semis.store (g.semis, std::memory_order_relaxed);
+            vg.age.store ((float) g.age / (float) g.len, std::memory_order_relaxed);
+            vg.flags.store (1 | (g.inc < 0.0 ? 2 : 0), std::memory_order_relaxed);
+        }
+        viz->grStutActive.store (stutActive ? 1 : 0, std::memory_order_relaxed);
+        if (stutActive)
+        {
+            const int behind = ((writePos - stutStart) % bufLen + bufLen) % bufLen;
+            viz->grStutStartSec.store ((float) behind / (float) sr, std::memory_order_relaxed);
+            viz->grStutLenSec.store ((float) sliceLen / (float) sr, std::memory_order_relaxed);
+        }
+    }
 
     int wrap (int64_t i) const noexcept
     {
@@ -233,6 +284,7 @@ private:
         g->age = 0;
         g->window = window;
         g->gain = norm;
+        g->semis = st;
         panGains (panJit * rng.bi(), g->panL, g->panR);
     }
 
@@ -247,5 +299,9 @@ private:
     int stutStart = 0, stutAge = 0;
     float fbEnv = 0.0f;
     Rng rng;
+    VizData* viz = nullptr;
+    double colLen = 1.0;
+    int vizCol = 0;
+    float vizColPeak = 0.0f;
 };
 } // namespace synthia::dsp

@@ -48,8 +48,6 @@ private:
     MainView view;
     juce::TooltipWindow tooltips { this, 700 };
     juce::ComponentBoundsConstrainer constrainer;
-    int lastPickCount = 0;
-    float pickFlash = 0.0f;
     juce::Random rng;
 };
 } // namespace synthia

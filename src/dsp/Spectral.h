@@ -12,6 +12,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "dsp/Common.h"
 #include "dsp/Layer.h"
+#include "dsp/VizData.h"
 
 namespace synthia::dsp
 {
@@ -111,6 +112,14 @@ private:
         while ((1 << order) < N) ++order;
         hop = N / 4;
         fft = ffts[(size_t) (order - 10)].get();
+        // display bins (log spaced) -> FFT bin ranges for this N
+        for (int b = 0; b <= VizData::kSpecBins; ++b)
+        {
+            const double hz = VizData::kSpecLo * std::pow ((double) VizData::kSpecHi / VizData::kSpecLo, (double) b / VizData::kSpecBins);
+            dispEdge[(size_t) b] = juce::jlimit (1, N / 2 - 1, (int) std::lround (hz * N / sr));
+            const double hzC = VizData::kSpecLo * std::pow ((double) VizData::kSpecHi / VizData::kSpecLo, ((double) b + 0.5) / VizData::kSpecBins);
+            dispCentre[(size_t) std::min (b, VizData::kSpecBins - 1)] = (float) juce::jlimit (1.0, (double) N / 2 - 2, hzC * N / sr);
+        }
         for (int i = 0; i < N; ++i)
             window[(size_t) i] = 0.5f - 0.5f * std::cos (kTwoPi * (float) i / (float) N);
         reset();
@@ -208,6 +217,9 @@ private:
             }
             cbufA[(size_t) k] = zl + zf;
         }
+        if (viz != nullptr && viz->active.load (std::memory_order_relaxed))
+            publish (b);
+
         cbufA[0] = { cbufA[0].real(), 0.0f };
         cbufA[(size_t) (N / 2)] = { cbufA[(size_t) (N / 2)].real(), 0.0f };
         for (int k = N / 2 + 1; k < N; ++k)
@@ -224,6 +236,54 @@ private:
         }
     }
 
+    void publish (float frozenBlend) noexcept
+    {
+        const float norm = 4.0f / (float) N; // Hann: a sine of amplitude A peaks at A*N/4
+        auto db = [norm] (float m) { return 20.0f * std::log10 (std::max (m * norm, 1.0e-6f)); };
+        for (int b = 0; b < VizData::kSpecBins; ++b)
+        {
+            const int k0 = dispEdge[(size_t) b], k1 = std::max (k0, dispEdge[(size_t) b + 1] - 1);
+            float ml = 0.0f, mf = 0.0f;
+            uint8_t pk = 0;
+            if (k1 - k0 < 2)
+            {
+                // display bin narrower than the FFT resolution: interpolate between FFT bins
+                const float c = dispCentre[(size_t) b];
+                const int i = (int) c;
+                const float t = c - (float) i;
+                ml = outMagL[(size_t) i] + t * (outMagL[(size_t) i + 1] - outMagL[(size_t) i]);
+                mf = outMagF[(size_t) i] + t * (outMagF[(size_t) i + 1] - outMagF[(size_t) i]);
+            }
+            else
+                for (int k = k0; k <= k1; ++k)
+                {
+                    ml = std::max (ml, outMagL[(size_t) k]);
+                    mf = std::max (mf, outMagF[(size_t) k]);
+                }
+            viz->spLive[(size_t) b].store (db (ml), std::memory_order_relaxed);
+            viz->spFrozen[(size_t) b].store (db (mf), std::memory_order_relaxed);
+            viz->spPeak[(size_t) b].store (pk, std::memory_order_relaxed);
+        }
+        // one marker per kept partial (display bin of its FFT peak)
+        if (st.partials > 0)
+        {
+            const double lo = VizData::kSpecLo, hi = VizData::kSpecHi;
+            for (int i = 0; i < keptPeaks; ++i)
+            {
+                const double hz = (double) keptPeakBins[(size_t) i] * sr / N;
+                if (hz <= lo || hz >= hi) continue;
+                const int b = (int) (VizData::kSpecBins * std::log (hz / lo) / std::log (hi / lo));
+                viz->spPeak[(size_t) juce::jlimit (0, VizData::kSpecBins - 1, b)].store (1, std::memory_order_relaxed);
+            }
+        }
+        viz->spFrozenOn.store (frozenBlend > 0.0f ? 1 : 0, std::memory_order_relaxed);
+        viz->spFrameCounter.fetch_add (1, std::memory_order_relaxed);
+    }
+
+public:
+    void setViz (VizData* v) noexcept { viz = v; }
+
+private:
     /** Partials selection + shift/stretch remap: (mIn, binIn) -> (mOut, binOut). */
     void shape (const float* mIn, const float* binIn, float* mOut, float* binOut, bool remap) noexcept
     {
@@ -236,6 +296,11 @@ private:
                 if (m[k] > m[k - 1] && m[k] >= m[k + 1] && m[k] > 1.0e-6f)
                     peakIdx[(size_t) np++] = k;
             const int keepN = std::min (np, st.partials);
+            if (mIn == blurMag.data())
+            {
+                keptPeaks = std::min (keepN, (int) keptPeakBins.size());
+                for (int i = 0; i < keptPeaks; ++i) keptPeakBins[(size_t) i] = peakIdx[(size_t) i];
+            }
             if (keepN < np)
                 std::nth_element (peakIdx.begin(), peakIdx.begin() + keepN, peakIdx.begin() + np,
                                   [m] (int a, int bb) { return m[a] > m[bb]; });
@@ -283,5 +348,10 @@ private:
     bool frozen = false, remapWasActive = false;
     float freezeFade = 0.0f;
     Rng rng;
+    VizData* viz = nullptr;
+    std::array<int, VizData::kSpecBins + 1> dispEdge {};
+    std::array<float, VizData::kSpecBins> dispCentre {};
+    int keptPeaks = 0;
+    std::array<int, 64> keptPeakBins {};
 };
 } // namespace synthia::dsp

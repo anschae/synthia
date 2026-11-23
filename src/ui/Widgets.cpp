@@ -277,6 +277,7 @@ void SectionPanel::resized()
     const int cols = juce::jmax (1, (getWidth() - 12) / kCellW);
     const int x0 = 6, y0 = kTitleH;
     int row = 0, col = 0;
+    std::array<int, 16> rowRight {};
     for (auto& it : items)
     {
         if ((it.newRow && col > 0) || col + it.span > cols)
@@ -294,6 +295,18 @@ void SectionPanel::resized()
             b = b.withSizeKeepingCentre (b.getWidth(), 48);
         it.comp->setBounds (b);
         col += it.span;
+        rowRight[(size_t) juce::jmin (15, row)] = juce::jmax (rowRight[(size_t) juce::jmin (15, row)], x + it.span * kCellW);
+    }
+    const int rowH = kCellH + kCaptionH;
+    if (footer != nullptr)
+    {
+        const int fy = y0 + rowsUsed() * rowH + 6;
+        footer->setBounds (6, fy, getWidth() - 12, juce::jmax (10, getHeight() - fy - 6));
+    }
+    for (auto& [c, r] : sides)
+    {
+        const int sx = rowRight[(size_t) juce::jlimit (0, 15, r)] + 10;
+        c->setBounds (sx, y0 + r * rowH + 6, juce::jmax (10, getWidth() - 6 - sx), rowH - 8);
     }
     diceButton.setBounds (getWidth() - 42, 3, 36, 18);
 }

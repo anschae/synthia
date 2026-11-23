@@ -61,6 +61,7 @@ public:
             b = rng.bi();
         }
         const float p = (float) (c - std::floor (c));
+        phaseNow = p;
         switch (shape)
         {
             case sine:      value = sinCycle (p); break;
@@ -81,6 +82,7 @@ public:
     }
 
     float value = 0.0f;
+    float phaseNow = 0.0f;
 
 private:
     Rng rng;
@@ -190,6 +192,7 @@ public:
     /** Normalised offsets per parameter index (valid after advance). */
     const float* modOffsets() const noexcept { return offsets.data(); }
     float source (int s) const noexcept { return src[(size_t) s]; }
+    float lfoPhase (int i) const noexcept { return i == 0 ? lfo1.phaseNow : lfo2.phaseNow; }
 
     static bool isBipolar (int s) noexcept { return s == modsrc::lfo1 || s == modsrc::lfo2 || s == modsrc::random || s == modsrc::stepSeq; }
 

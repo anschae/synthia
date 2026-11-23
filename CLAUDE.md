@@ -71,8 +71,9 @@ src/dsp/Common.h         helpers: DelayLine, Svf, OnePole, fastTanh, safeLimit, 
 src/model/PresetManager.* factory + user presets (.synthia XML in Documents/Synthia/Presets), A/B
 src/model/FactoryPresets.* factory presets as parameter differences to the defaults
 src/model/Randomizer.h   per-section / global randomize with chaos
-src/ui/                  LookAndFeel, Widgets (ParamKnob/Toggle/Combo/DestButton/Meter/SectionPanel),
-                         Pages (Layers, Filter & FX, Modulation incl. StepSeqEditor + MatrixPanel), TopBar
+src/dsp/VizData.h        lock-free data for the editor's live displays (relaxed atomics, written only while an editor is open)
+src/ui/                  LookAndFeel, Widgets (ParamKnob/Toggle/Combo/DestButton/Meter/SectionPanel with footer/side slots),
+                         Viz (live displays), Pages (Layers, Filter & FX, Modulation incl. StepSeqEditor + MatrixPanel), TopBar
 src/PluginProcessor.*    APVTS + Engine + state (SynthiaState root, stateVersion, migrate()) + latency timer
 src/PluginEditor.*       MainView at design size 1200x790, scaled 75-200 % with an AffineTransform
 tools/Render.cpp         synthia-render CLI     tools/Snapshot.cpp  editor -> PNG (SY_BUILD_TOOLS)
@@ -112,6 +113,17 @@ tests/                   Catch2: CoreTests (params, state, fuzz, decay, presets,
 - **Pick detector:** HF (900 Hz HP) fast env vs slow env ratio + floor, both from Pick Sensitivity;
   retrigger hold. Envelope follower output 0..1 = -60..0 dBFS.
 - **UI scale / chaos** are stored in the session state but not applied from presets or A/B.
+- **Live displays** (v0.2, mockup: claude.ai artifact "Synthia – Visualisierungen Mockup"): the editor sets
+  `engine.viz.active`; the engine and layers then publish into `dsp::VizData` with relaxed atomic stores
+  (per chunk, or per FFT frame for Spectral; timeline/granular columns per sample-accumulated peaks).
+  UI components in `ui/Viz.*` derive from `VizBox` and repaint from the editor's 30 Hz timer, only for
+  the current page and only while showing. Displays: pick timeline (input), Voicer bands, spectrum
+  (+ frozen + partials), chord keyboards + resonator voices + vowel map, granular buffer/grains/stutter,
+  filter curve (analytic, incl. live modulated cutoff), pick ADSR (live stage), chopper playhead,
+  delay echoes, reverb decay + shimmer tiers, LFO previews (live phase), matrix activity per slot.
+  Things computed from parameters (curves, chord notes) use `VizBox::effective()` (modulated value).
+- **SectionPanel** layout slots: `setFooter()` (below the last row) and `addSide (comp, row)`
+  (right of the last control in a row). The chord slots are `ChordCard`s in the C panel footer.
 
 ## Rules
 - Real-time safety: no allocation, locks, I/O or logging on the audio thread; preallocate in `prepareToPlay`; `ScopedNoDenormals`; smooth all parameters; any block size / sample rate 44.1–192 kHz.
@@ -135,11 +147,13 @@ tests/                   Catch2: CoreTests (params, state, fuzz, decay, presets,
 Milestones 1-6 were built in one go (one commit) because the parameter table and engine are
 shared; CI was green after each push (2026-11-20: all jobs incl. auval + pluginval 10).
 
+- [x] v0.2 Live displays for every section (2026-11-24)
+
 **Not yet done / next steps**
 - Nobody has played it yet: tune by ear with real DIs (`synthia-render`). Factory preset levels were
   set on a synthetic Karplus-Strong DI (`scripts/` has no DI; render with your own files).
 - Pick detector thresholds tuned on synthetic plucks only -> check `pickSens` defaults on real DIs.
-- Possible extras: per-band display for the Voicer, spectrum view, MIDI learn, preset tags.
+- Possible extras: MIDI learn, preset tags, input/output spectrum overlay on the filter curve.
 
 **Performance** (synthia-render, 48 kHz, block 64, RelWithDebInfo, cloud Xeon 2.1 GHz):
 Init (Voicer 48 bands + reverb) ~8 % of one core; all five layers + delay + reverb at defaults ~11 %;
@@ -176,3 +190,5 @@ Apple Silicon / a recent laptop is 2-3x faster per core.
 - `formatValue()` is used by the host for parameter text; keep it allocation-light (message thread only).
 - Non-ASCII UI strings must be written as `juce::CharPointer_UTF8 ("\x..")` (MSVC + JUCE assert).
 - The GUI snapshot tool needs a display: `xvfb-run -a build-dev/SynthiaSnapshot_artefacts/RelWithDebInfo/SynthiaSnapshot out/ "Glass Pad"`.
+  It switches all layers on and feeds synthetic plucks *after* opening the editor, so the live displays show data.
+- Never call `setAlpha`/`setBounds` etc. inside `paint()` (repaint loop) -- do it in `tick()` (see VowelMap).

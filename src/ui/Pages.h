@@ -1,6 +1,7 @@
 #pragma once
 // Editor pages: Layers (input, A-E, mixer), Filter & FX, Modulation; plus the top bar.
 
+#include "ui/Viz.h"
 #include "ui/Widgets.h"
 
 namespace synthia
@@ -58,9 +59,9 @@ public:
     void paint (juce::Graphics&) override;
     void selectLayer (int i);
     void updateModeDimming();
-    void setPickFlash (float v) { if (std::abs (v - pickFlash) > 0.01f) { pickFlash = v; repaint (pickLed); } }
     std::vector<ParamKnob*> allKnobs();
     std::vector<SectionPanel*> panels();
+    void tick();
 
 private:
     SynthiaProcessor& proc;
@@ -70,8 +71,14 @@ private:
     juce::OwnedArray<LayerStrip> strips;
     SectionPanel master;
     int selected = 0;
-    juce::Rectangle<int> pickLed;
-    float pickFlash = 0.0f;
+    PickTimeline pickTimeline;
+    VoicerBands voicerBands;
+    SpectrumView spectrum;
+    GranularView granView;
+    std::unique_ptr<juce::Component> resoFooter;
+    std::vector<ChordKeyboard*> keyboards;
+    ResoVoices* resoVoices = nullptr;
+    VowelMap* vowelMap = nullptr;
     // groups inside the C panel that are dimmed depending on the mode
     std::vector<juce::Component*> resoGroup, vocGroup, formGroup;
 };
@@ -83,9 +90,15 @@ public:
     void resized() override;
     std::vector<ParamKnob*> allKnobs();
     std::vector<SectionPanel*> panels() { return { &filter, &amp, &chopper, &delay, &reverb }; }
+    void tick();
 
 private:
     SectionPanel filter, amp, chopper, delay, reverb;
+    FilterCurve filterCurve;
+    AdsrView adsrView;
+    DelayView delayView;
+    ReverbView reverbView;
+    juce::Component* chopSteps = nullptr;
 };
 
 class MatrixPanel : public juce::Component
@@ -94,6 +107,7 @@ public:
     explicit MatrixPanel (SynthiaProcessor& p);
     void paint (juce::Graphics&) override;
     void resized() override;
+    void tick() { if (isShowing()) for (auto* r : rows) r->repaint(); }
 
 private:
     juce::OwnedArray<juce::Component> rows;
@@ -108,9 +122,11 @@ public:
     std::vector<SectionPanel*> panels() { return { &lfo1, &lfo2, &random, &macros, &seqPanel }; }
     void setPlayingStep (int s) { seqEditor.setPlayingStep (s); }
     void setSourceValues (const float* v);
+    void tick() { lfoView1.tick(); lfoView2.tick(); matrix.tick(); }
 
 private:
     SectionPanel lfo1, lfo2, random, macros, seqPanel;
+    LfoPreview lfoView1, lfoView2;
     StepSeqEditor seqEditor;
     MatrixPanel matrix;
 };

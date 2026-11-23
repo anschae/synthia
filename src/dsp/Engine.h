@@ -28,6 +28,7 @@
 #include "dsp/Spectral.h"
 #include "dsp/StereoDelay.h"
 #include "dsp/Voicer.h"
+#include "dsp/VizData.h"
 
 namespace synthia::dsp
 {
@@ -93,6 +94,7 @@ public:
     std::atomic<float> envOut { 0.0f };
     ParamState params;
     ModEngine mod;
+    VizData viz; // live data for the editor displays
 
     /** Test hooks. */
     Voicer& getVoicer() noexcept { return voicer; }
@@ -130,6 +132,9 @@ private:
 
     double freePpq = 0.0;
     bool prepared = false;
+    double tlColLen = 750.0, tlCount = 0.0;
+    float tlPeak = 0.0f;
+    bool tlPick = false;
     float pickEnvForMod = 0.0f;
     int pickCounter = 0;
 };

@@ -119,6 +119,7 @@ public:
             const double stepPos = quarters / s.stepQuarters;
             auto idx = (int64_t) std::floor (stepPos) % 16;
             if (idx < 0) idx += 16;
+            step = (int) idx;
             const float open = ((s.steps >> idx) & 1u) ? 1.0f : 0.0f;
             const float t = 1.0f - s.chopDepth * (1.0f - open);
             chopGain = t + (chopGain - t) * chopCoef;
@@ -130,6 +131,8 @@ public:
     }
 
     float adsrLevel() const noexcept { return level; }
+    int stageIndex() const noexcept { return (int) stage; }
+    int lastStep() const noexcept { return step; }
     double freeQuarters = 0.0;
 
 private:
@@ -141,6 +144,7 @@ private:
     float atkStep = 0.01f, decCoef = 0.999f, relCoef = 0.999f;
     float swell = 1, swellRamp = 0, swellStep = 0.001f, dipStep = 0.01f;
     int swellPhase = 2;
+    int step = 0;
     float chopGain = 1, chopCoef = 0.9f;
 };
 } // namespace synthia::dsp
