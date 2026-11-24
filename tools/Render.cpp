@@ -29,7 +29,7 @@ public:
 
 int usage()
 {
-    std::puts ("usage: synthia-render input.wav preset.xml|factory:<Name>|init output.wav [--bpm 120] [--tail 4] [--block 256]\n"
+    std::puts ("usage: synthia-render input.wav preset.xml|factory:<Name>|init output.wav [--bpm 120] [--tail 4] [--block 256] [--viz]\n"
                "       synthia-render --list   (lists the factory presets)");
     return 1;
 }
@@ -54,11 +54,13 @@ int main (int argc, char* argv[])
     juce::StringArray positional;
     double bpm = 120.0, tail = 4.0;
     int block = 256;
+    bool viz = false;
     for (int i = 0; i < args.size(); ++i)
     {
         if (args[i] == "--bpm" && i + 1 < args.size()) bpm = args[++i].getDoubleValue();
         else if (args[i] == "--tail" && i + 1 < args.size()) tail = args[++i].getDoubleValue();
         else if (args[i] == "--block" && i + 1 < args.size()) block = juce::jmax (1, args[++i].getIntValue());
+        else if (args[i] == "--viz") viz = true; // profile with the editor's live-display data path enabled
         else positional.add (args[i]);
     }
     if (positional.size() < 3)
@@ -114,6 +116,7 @@ int main (int argc, char* argv[])
     proc.setPlayHead (&playHead);
     proc.prepareToPlay (sr, block);
     const int latency = proc.engine.getDesiredLatency();
+    proc.engine.viz.active.store (viz);
 
     juce::AudioBuffer<float> out (2, total);
     juce::AudioBuffer<float> buf (2, block);

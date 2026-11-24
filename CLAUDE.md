@@ -165,6 +165,10 @@ shared; CI was green after each push (2026-11-20: all jobs incl. auval + pluginv
 Init (Voicer 48 bands + reverb) ~8 % of one core; all five layers + delay + reverb at defaults ~11 %;
 worst case (72 bands, 4x OS, all voices, 100 grains/s x 500 ms, metal resonators, all FX) ~25 %.
 Apple Silicon / a recent laptop is 2-3x faster per core.
+Live displays (2026-11-24, same machine): audio-thread data path +0.2-0.3 %-points with all layers on
+(`synthia-render ... --viz`, within noise); GUI painting of the displays at 30 fps, JUCE software
+renderer at 100 %: Voicer tab ~5.6 %, Spectral ~4.6 %, Resonator ~4 %, Granular ~8.3 %, Dry ~1.5 %,
+FX ~3.9 %, Mod ~0.9 % of one core (`SynthiaSnapshot out "Preset" 1.0 --bench`). Nothing when closed.
 
 ## Decisions log
 - 2026-11-20: No note detection (user decision) — processing-based synthesis only.

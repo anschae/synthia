@@ -102,5 +102,63 @@ int main (int argc, char* argv[])
     feed (1.5);
     pump (100);
     save (*editor, out.getChildFile ("mod.png"));
+
+    // --bench: average paint time of each page with live data (software renderer)
+    if (juce::String (argv[argc - 1]) == "--bench")
+    {
+        auto bench = [&] (const juce::String& name)
+        {
+            juce::Image img (juce::Image::ARGB, editor->getWidth(), editor->getHeight(), true);
+            const int n = 60;
+            double total = 0.0;
+            for (int i = 0; i < n; ++i)
+            {
+                feed (1.0 / 30.0);
+                juce::Graphics g (img);
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                editor->paintEntireComponent (g, true);
+                total += juce::Time::getMillisecondCounterHiRes() - t0;
+            }
+            // only the live displays (what the 30 Hz timer actually repaints)
+            std::vector<juce::Component*> displays;
+            std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
+            {
+                for (auto* ch : c.getChildren())
+                {
+                    if (! ch->isVisible()) continue;
+                    if (dynamic_cast<synthia::VizBox*> (ch) != nullptr || dynamic_cast<synthia::ChordKeyboard*> (ch) != nullptr)
+                        displays.push_back (ch);
+                    walk (*ch);
+                }
+            };
+            walk (*editor);
+            double vizTotal = 0.0;
+            for (int i = 0; i < n; ++i)
+            {
+                feed (1.0 / 30.0);
+                for (auto* d : displays)
+                {
+                    juce::Image im (juce::Image::ARGB, juce::jmax (1, d->getWidth()), juce::jmax (1, d->getHeight()), true);
+                    juce::Graphics g (im);
+                    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                    d->paintEntireComponent (g, true);
+                    vizTotal += juce::Time::getMillisecondCounterHiRes() - t0;
+                }
+            }
+            const double perTick = vizTotal / n;
+            std::cout << "paint " << name << ": full frame " << total / n << " ms | " << displays.size() << " displays "
+                      << perTick << " ms per tick = " << perTick * 30.0 / 10.0 << " % of one core at 30 fps" << std::endl;
+        };
+        for (int layer = 0; layer < 5; ++layer)
+        {
+            v.showPage (0);
+            v.layers.selectLayer (layer);
+            bench ("layers " + juce::String (layer));
+        }
+        v.showPage (1);
+        bench ("fx");
+        v.showPage (2);
+        bench ("mod");
+    }
     return 0;
 }
