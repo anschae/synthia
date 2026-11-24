@@ -57,6 +57,16 @@ protected:
     void paintContent (juce::Graphics&, juce::Rectangle<float>) override;
 };
 
+/** The Voicer's waveform (morph + PW) and the mix of all its voices, 2 cycles. */
+class WaveView : public VizBox
+{
+public:
+    explicit WaveView (SynthiaProcessor& p);
+
+protected:
+    void paintContent (juce::Graphics&, juce::Rectangle<float>) override;
+};
+
 class GranularView : public VizBox
 {
 public:

@@ -60,7 +60,7 @@
     X (vcOct, "Octave Up", F, 0.0f, 1.0f, 0.0f, Lin, "%", voicer, 1, none, "Voice one octave up (double phase rate).") \
     X (vcInt, "Interval", F, 0.0f, 1.0f, 0.0f, Lin, "%", voicer, 1, none, "Level of the interval voice.") \
     X (vcIntRatio, "Interval Ratio", C, 0.0f, 0.0f, 4.0f, Lin, "", voicer, 0, vcInterval, "Interval of the interval voice in semitones.") \
-    X (vcDetune, "Detune", F, 0.0f, 50.0f, 6.0f, Lin, "ct", voicer, 1, none, "Per-band slow pitch drift in cents: unison-like movement.") \
+    X (vcDetune, "Drift", F, 0.0f, 50.0f, 6.0f, Lin, "ct", voicer, 1, none, "Per-band slow random pitch drift in cents: gentle movement. For a real unison sound use the Unison section.") \
     X (vcFocus, "Focus", F, 0.0f, 1.0f, 0.5f, Lin, "%", voicer, 1, none, "Lateral inhibition across neighbouring bands: emphasises spectral peaks, reduces chord warble.") \
     X (vcTilt, "Tilt", F, -1.0f, 1.0f, -0.2f, Lin, "", voicer, 1, none, "Negative = favour low bands (fundamentals, rounder), positive = high bands (brighter, buzzier).") \
     X (vcSmooth, "Smooth", F, 0.5f, 100.0f, 6.0f, Log, "ms", voicer, 1, none, "Smoothing of the per-band amplitude envelopes.") \
@@ -343,4 +343,7 @@
     X (m16Dst, "Mod 16 Destination", C, 0.0f, 0.0f, 0.0f, Lin, "", matrix, 0, modDest, "Matrix slot 16: destination parameter.") \
     X (m16Amt, "Mod 16 Amount", F, -1.0f, 1.0f, 0.0f, Lin, "", matrix, 0, none, "Matrix slot 16: bipolar amount.") \
     X (m16Via, "Mod 16 Via", C, 0.0f, 0.0f, 0.0f, Lin, "", matrix, 0, modSource, "Matrix slot 16: optional scaler (e.g. a macro controls the amount).") \
+    X (vcUniVoices, "Unison Voices", I, 1.0f, 7.0f, 1.0f, Lin, "", voicer, 0, none, "Unison: number of detuned copies of the main voice per band (1 = off). More voices = thicker, more CPU.") \
+    X (vcUniDetune, "Unison Detune", F, 0.0f, 100.0f, 18.0f, Sq, "ct", voicer, 1, none, "Spread of the unison voices in cents (symmetric around the original pitch).") \
+    X (vcUniWidth, "Unison Width", F, 0.0f, 1.0f, 0.7f, Lin, "%", voicer, 1, none, "Stereo spread of the unison voices.") \
 

@@ -42,6 +42,7 @@ class Voicer
 {
 public:
     static constexpr int kMaxBands = 72;
+    static constexpr int kMaxUnison = 7;
 
     void prepare (double sampleRate)
     {
@@ -69,6 +70,7 @@ public:
             zsr[k] = 1.0e-9f; zsi[k] = 0.0f;
             amp[k] = 0.0f; w[k] = 1.0f;
             th[k] = rng.uni(); ths[k] = rng.uni(); tho[k] = rng.uni(); thi[k] = rng.uni();
+            for (int j = 0; j < kMaxUnison; ++j) thu[k][j] = rng.uni();
             drift[k] = driftT[k] = 0.0f;
         }
         os2->reset();
@@ -128,6 +130,22 @@ public:
         }
 
         const bool needSub = lvSub > 0.0001f || ring > 0.0001f;
+
+        // ---- unison (main voice only): U detuned copies, symmetric in cents, spread in stereo
+        const int U = juce::jlimit (1, kMaxUnison, (int) p.cur (pid::vcUniVoices));
+        if (U > 1)
+        {
+            const float uDet = p.cur (pid::vcUniDetune), uWidth = p.cur (pid::vcUniWidth);
+            const float norm = 1.0f / std::sqrt ((float) U);
+            for (int j = 0; j < U; ++j)
+            {
+                const float o = 2.0f * (float) j / (float) (U - 1) - 1.0f; // -1 .. +1
+                uniF[j] = std::exp2 (o * uDet / 1200.0f);
+                panGains (o * uWidth, uniGL[j], uniGR[j]);
+                uniGL[j] *= norm;
+                uniGR[j] *= norm;
+            }
+        }
         float ringBuf[kChunk];
 
         for (int s = 0; s < n; ++s)
@@ -183,8 +201,23 @@ public:
                     continue;
                 }
                 const float dt = inc[k] * detF[k];
-                float v = 0.0f;
-                if (lvMain > 0.0001f) v += lvMain * osc (th[k], dt, wave, pw);
+                float v = 0.0f, uL = 0.0f, uR = 0.0f;
+                if (lvMain > 0.0001f)
+                {
+                    if (U <= 1)
+                        v += lvMain * osc (th[k], dt, wave, pw);
+                    else
+                        for (int j = 0; j < U; ++j)
+                        {
+                            float& ph = thu[k][j];
+                            const float dj = dt * uniF[j];
+                            const float o = osc (ph, dj, wave, pw) * lvMain;
+                            uL += o * uniGL[j];
+                            uR += o * uniGR[j];
+                            ph += dj;
+                            ph -= (float) (int) ph;
+                        }
+                }
                 if (needSub)
                 {
                     const float ds = dt * 0.5f;
@@ -194,9 +227,8 @@ public:
                 if (lvOct > 0.0001f) v += lvOct * osc (tho[k], dt * 2.0f, wave, pw);
                 if (lvInt > 0.0001f) v += lvInt * osc (thi[k], dt * ratio, wave, pw);
                 advancePhases (k, ratio);
-                v *= a;
-                l += v * panL[k];
-                r += v * panR[k];
+                l += a * (v + uL) * panL[k];
+                r += a * (v + uR) * panR[k];
             }
             outL[s] = l * voicer_tuning::kOutputGain;
             outR[s] = r * voicer_tuning::kOutputGain;
@@ -388,6 +420,8 @@ private:
     float y1r[kMaxBands] {}, y1i[kMaxBands] {}, y2r[kMaxBands] {}, y2i[kMaxBands] {};
     float zsr[kMaxBands] {}, zsi[kMaxBands] {}, amp[kMaxBands] {}, w[kMaxBands] {}, inc[kMaxBands] {};
     float th[kMaxBands] {}, ths[kMaxBands] {}, tho[kMaxBands] {}, thi[kMaxBands] {};
+    float thu[kMaxBands][kMaxUnison] {};
+    float uniF[kMaxUnison] {}, uniGL[kMaxUnison] {}, uniGR[kMaxUnison] {};
     float tiltW[kMaxBands] {}, panL[kMaxBands] {}, panR[kMaxBands] {}, hashPan[kMaxBands] {};
     float drift[kMaxBands] {}, driftT[kMaxBands] {}, detF[kMaxBands] {};
     int driftCounter[kMaxBands] {};

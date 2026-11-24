@@ -248,6 +248,81 @@ void VoicerBands::paintContent (juce::Graphics& g, juce::Rectangle<float> r)
     }
 }
 
+// ============================================================================ WaveView
+WaveView::WaveView (SynthiaProcessor& p) : VizBox (p, "Wave", theme::voicer)
+{
+    setLegend ({ { theme::voicer, "Wave", 1 }, { theme::text, "All voices", 1 } });
+}
+
+namespace
+{
+/** Naive (non band-limited) version of the Voicer's waveform morph, for drawing only. */
+float voicerShape (float t, float wave, float pw)
+{
+    t -= std::floor (t);
+    const float sine = std::sin (juce::MathConstants<float>::twoPi * t);
+    const float saw = 2.0f * t - 1.0f;
+    auto pulse = [t] (float d) { return (t < d ? 1.0f : -1.0f) - (2.0f * d - 1.0f); };
+    if (wave < 1.0f) return sine + (saw - sine) * wave;
+    if (wave < 2.0f) return saw + (pulse (0.5f) - saw) * (wave - 1.0f);
+    return pulse (0.5f + (pw - 0.5f) * juce::jmin (1.0f, wave - 2.0f));
+}
+} // namespace
+
+void WaveView::paintContent (juce::Graphics& g, juce::Rectangle<float> r)
+{
+    r = r.reduced (2.0f, 3.0f);
+    const float wave = effective (pid::vcWave), pw = effective (pid::vcPw);
+    const float lm = effective (pid::vcMain), ls = effective (pid::vcSub), lo = effective (pid::vcOct), li = effective (pid::vcInt);
+    static constexpr float intervals[] = { -12, -7, -5, 5, 7, 12, 19 };
+    const float ratio = std::exp2 (intervals[juce::jlimit (0, 6, juce::roundToInt (param (pid::vcIntRatio)))] / 12.0f);
+    const float mid = r.getCentreY(), amp = r.getHeight() * 0.42f;
+    g.setColour (juce::Colour (0xff2a2e38));
+    g.drawHorizontalLine ((int) mid, r.getX(), r.getRight());
+    // 2 cycles of the main voice (= one cycle of the sub)
+    const float cycles = 2.0f;
+    const int n = 360;
+    juce::Path pWave, pMix;
+    float peak = 1.0e-3f;
+    std::vector<float> mix ((size_t) n + 1);
+    for (int i = 0; i <= n; ++i)
+    {
+        const float t = cycles * (float) i / (float) n;
+        float m = lm * voicerShape (t, wave, pw);
+        if (ls > 0.001f) m += ls * voicerShape (t * 0.5f, wave, pw);
+        if (lo > 0.001f) m += lo * voicerShape (t * 2.0f, wave, pw);
+        if (li > 0.001f) m += li * voicerShape (t * ratio, wave, pw);
+        mix[(size_t) i] = m;
+        peak = juce::jmax (peak, std::abs (m));
+    }
+    for (int i = 0; i <= n; ++i)
+    {
+        const float x = r.getX() + r.getWidth() * (float) i / (float) n;
+        const float yw = mid - amp * voicerShape (cycles * (float) i / (float) n, wave, pw) * 0.85f;
+        const float ym = mid - amp * mix[(size_t) i] / peak;
+        if (i == 0) { pWave.startNewSubPath (x, yw); pMix.startNewSubPath (x, ym); }
+        else { pWave.lineTo (x, yw); pMix.lineTo (x, ym); }
+    }
+    g.setColour (theme::text.withAlpha (0.55f));
+    g.strokePath (pMix, juce::PathStrokeType (1.2f));
+    g.setColour (theme::voicer);
+    g.strokePath (pWave, juce::PathStrokeType (1.8f));
+    // unison badge
+    const int U = juce::roundToInt (param (pid::vcUniVoices));
+    if (U > 1)
+    {
+        const juce::String txt = "Unison " + juce::String (U) + " x " + juce::String (juce::CharPointer_UTF8 ("\xc2\xb1"))
+                                 + formatValue (pid::vcUniDetune, effective (pid::vcUniDetune)).trimCharactersAtStart ("+");
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        const float w = (float) juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), txt) + 14.0f;
+        auto badge = juce::Rectangle<float> (r.getRight() - w, r.getBottom() - 15.0f, w, 15.0f);
+        g.setColour (theme::voicer);
+        g.fillRoundedRectangle (badge, 7.5f);
+        g.setColour (juce::Colours::black);
+        g.drawText (txt, badge, juce::Justification::centred);
+    }
+}
+
 // ============================================================================ GranularView
 GranularView::GranularView (SynthiaProcessor& p) : VizBox (p, {}, theme::granular)
 {

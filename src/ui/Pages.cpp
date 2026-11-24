@@ -192,10 +192,12 @@ void fillVoicer (SectionPanel& s)
     s.newRow();
     s.caption ("Voices");
     s.add (pid::vcWave); s.add (pid::vcPw, "PW"); s.add (pid::vcMain); s.add (pid::vcSub); s.add (pid::vcOct, "Oct Up");
-    s.add (pid::vcInt, "Interval"); s.add (pid::vcIntRatio, "Ratio"); s.add (pid::vcDetune);
+    s.add (pid::vcInt, "Interval"); s.add (pid::vcIntRatio, "Ratio"); s.add (pid::vcDetune, "Drift");
     s.newRow();
     s.caption ("Colour");
     s.add (pid::vcDrive); s.add (pid::vcFold); s.add (pid::vcRing); s.add (pid::vcBits, "Bits"); s.add (pid::vcRate, "Rate");
+    s.caption ("Unison");
+    s.add (pid::vcUniVoices, "Voices"); s.add (pid::vcUniDetune, "Detune"); s.add (pid::vcUniWidth, "Width");
 }
 
 void fillSpectral (SectionPanel& s)
@@ -295,7 +297,7 @@ public:
 
 LayersPage::LayersPage (SynthiaProcessor& p)
     : proc (p), inputPanel (p, "Input", theme::input), master (p, "Output", theme::dry),
-      pickTimeline (p), voicerBands (p), spectrum (p), granView (p)
+      pickTimeline (p), voicerBands (p), waveView (p), spectrum (p), granView (p)
 {
     inputPanel.add (pid::inGain, "Gain");
     inputPanel.add (pid::hpf);
@@ -341,6 +343,7 @@ LayersPage::LayersPage (SynthiaProcessor& p)
 
     addAndMakeVisible (pickTimeline);
     layerPanels[0]->setFooter (&voicerBands);
+    layerPanels[0]->addSide (&waveView, 1);
     layerPanels[1]->setFooter (&spectrum);
     layerPanels[3]->setFooter (&granView);
     {
@@ -410,6 +413,7 @@ void LayersPage::tick()
 {
     pickTimeline.tick();
     voicerBands.tick();
+    waveView.tick();
     spectrum.tick();
     granView.tick();
     for (auto* k : keyboards) k->tick();

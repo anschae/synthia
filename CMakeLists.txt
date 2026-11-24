@@ -9,7 +9,7 @@ cmake_minimum_required(VERSION 3.24)
 # ==============================================================================
 set(SY_PLUGIN_NAME        "Synthia")
 set(SY_TARGET             "Synthia")
-set(SY_VERSION            "0.2.0")
+set(SY_VERSION            "0.3.0")
 set(SY_COMPANY_NAME       "anschae")
 set(SY_MANUFACTURER_CODE  "Ansc")   # same as IRene / Prog Delay
 set(SY_PLUGIN_CODE        "Snth")

@@ -57,7 +57,7 @@ F('vcSub',   'Sub', 0, 1, 0, 'Lin', '%', 'voicer', 'Sub voice one octave down (h
 F('vcOct',   'Octave Up', 0, 1, 0, 'Lin', '%', 'voicer', 'Voice one octave up (double phase rate).')
 F('vcInt',   'Interval', 0, 1, 0, 'Lin', '%', 'voicer', 'Level of the interval voice.')
 C('vcIntRatio', 'Interval Ratio', 'vcInterval', 4, 'voicer', 'Interval of the interval voice in semitones.')
-F('vcDetune','Detune', 0, 50, 6, 'Lin', 'ct', 'voicer', 'Per-band slow pitch drift in cents: unison-like movement.')
+F('vcDetune','Drift', 0, 50, 6, 'Lin', 'ct', 'voicer', 'Per-band slow random pitch drift in cents: gentle movement. For a real unison sound use the Unison section.')
 F('vcFocus', 'Focus', 0, 1, 0.5, 'Lin', '%', 'voicer', 'Lateral inhibition across neighbouring bands: emphasises spectral peaks, reduces chord warble.')
 F('vcTilt',  'Tilt', -1, 1, -0.2, 'Lin', '', 'voicer', 'Negative = favour low bands (fundamentals, rounder), positive = high bands (brighter, buzzier).')
 F('vcSmooth','Smooth', 0.5, 100, 6, 'Log', 'ms', 'voicer', 'Smoothing of the per-band amplitude envelopes.')
@@ -209,6 +209,10 @@ for n in range(1, 17):
     C(f'm{n}Via', f'Mod {n} Via', 'modSource', 0, 'matrix', f'Matrix slot {n}: optional scaler (e.g. a macro controls the amount).')
 
 # ---------------------------------------------------------------- APPEND NEW PARAMETERS BELOW THIS LINE ONLY
+# v0.3: Voicer unison (main voice only)
+I('vcUniVoices', 'Unison Voices', 1, 7, 1, '', 'voicer', 'Unison: number of detuned copies of the main voice per band (1 = off). More voices = thicker, more CPU.', 0)
+F('vcUniDetune', 'Unison Detune', 0, 100, 18, 'Sq', 'ct', 'voicer', 'Spread of the unison voices in cents (symmetric around the original pitch).')
+F('vcUniWidth', 'Unison Width', 0, 1, 0.7, 'Lin', '%', 'voicer', 'Stereo spread of the unison voices.')
 
 def esc(s): return s.replace('\\', '\\\\').replace('"', '\\"')
 ids = [p[0] for p in P]

@@ -16,6 +16,10 @@ const std::vector<FactoryPreset>& factoryPresets()
             { "vcWave", 1 }, { "vcSub", 0.25f }, { "vcDetune", 10 }, { "vcFocus", 0.6f }, { "vcSpread", 0.5f },
             { "fltCut", 3500 }, { "fltRes", 0.3f }, { "fltPick", 0.35f },
             { "dlyOn", 1 }, { "dlyDiv", 13 }, { "dlyMix", 0.2f }, { "rvMix", 0.2f } } },
+        { "Supersaw Unison Lead", "Lead", {
+            { "vcWave", 1 }, { "vcUniVoices", 5 }, { "vcUniDetune", 22 }, { "vcUniWidth", 0.8f }, { "vcSub", 0.2f }, { "vcFocus", 0.65f },
+            { "vcSpread", 0.3f }, { "fltCut", 4500 }, { "fltRes", 0.2f }, { "fltPick", 0.25f },
+            { "dlyOn", 1 }, { "dlyDiv", 13 }, { "dlyMix", 0.18f }, { "rvMix", 0.22f } } },
         { "80s Brass", "Lead", {
             { "vcWave", 1 }, { "vcDetune", 14 }, { "vcOct", 0.2f }, { "fltCut", 900 }, { "fltRes", 0.15f },
             { "fltEnv", 0.45f }, { "fltPick", 0.4f }, { "adsrAmt", 0.6f }, { "adsrA", 40 }, { "adsrD", 600 }, { "adsrS", 0.7f },

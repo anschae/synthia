@@ -279,3 +279,39 @@ TEST_CASE ("layers that are off do not run", "[engine]")
     REQUIRE_FALSE (r.proc.engine.isLayerProcessing (synthia::dsp::Engine::layerGranular));
     REQUIRE (r.proc.engine.isLayerProcessing (synthia::dsp::Engine::layerVoicer));
 }
+
+TEST_CASE ("voicer unison thickens and widens the main voice", "[voicer]")
+{
+    auto render = [] (int voices, float width)
+    {
+        Rig r;
+        soloLayer (r, pid::vcOn);
+        r.set (pid::vcWave, 1.0f);
+        r.set (pid::vcDetune, 0.0f);
+        r.set (pid::vcSpread, 0.0f);
+        r.set (pid::vcUniVoices, (float) voices);
+        r.set (pid::vcUniDetune, 30.0f);
+        r.set (pid::vcUniWidth, width);
+        r.prepare();
+        return r.run (sine (r.sr, 220.0f, 1.0, 0.5f), 17);
+    };
+    auto mono = render (1, 1.0f);
+    auto uni = render (7, 1.0f);
+    REQUIRE (allFinite (uni));
+    REQUIRE (peak (uni) < 4.0f);
+    const int start = 24000, len = 20000;
+    // L == R without unison (spread 0), different with a wide unison
+    double diffMono = 0, diffUni = 0;
+    for (int i = start; i < start + len; ++i)
+    {
+        diffMono += std::abs (mono.getSample (0, i) - mono.getSample (1, i));
+        diffUni += std::abs (uni.getSample (0, i) - uni.getSample (1, i));
+    }
+    REQUIRE (diffMono < 1.0e-3 * len);
+    REQUIRE (diffUni > 0.01 * len);
+    // level stays in the same ballpark (1/sqrt(N) normalisation)
+    const double rm = rms (mono, 0, start, len), ru = rms (uni, 0, start, len);
+    INFO ("rms mono " << rm << " unison " << ru);
+    REQUIRE (ru > rm * 0.4);
+    REQUIRE (ru < rm * 2.5);
+}

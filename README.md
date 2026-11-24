@@ -95,7 +95,9 @@ Displays only run while the window is open and cost no audio CPU otherwise.
 ### A — Voicer (the synth)
 The guitar is split into 24–72 narrow bands; every band drives its own oscillator at the band's
 instantaneous frequency. **Wave** morphs sine → saw → square → pulse; **Sub**, **Oct Up** and
-**Interval** add voices at ½×, 2× and the chosen interval. **Sharpness** trades attack speed (low) for
+**Interval** add voices at ½×, 2× and the chosen interval. **Unison** (Voices 1–7, Detune, Width)
+stacks detuned copies of the main voice per band for supersaw-style width; **Drift** adds a slow random
+pitch movement per band. The **Wave** display shows the waveform and the mix of all voices. **Sharpness** trades attack speed (low) for
 clean, stable tones (high). **Focus** suppresses side bands around each partial (less warble on chords).
 **Tilt** negative = rounder (fundamentals), positive = brighter/buzzier. **Low** ~45 Hz covers 7/8-string
 low notes. **Drive / Fold** are oversampled according to **Quality** (top bar).

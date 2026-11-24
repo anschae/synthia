@@ -73,6 +73,7 @@ private:
     int selected = 0;
     PickTimeline pickTimeline;
     VoicerBands voicerBands;
+    WaveView waveView;
     SpectrumView spectrum;
     GranularView granView;
     std::unique_ptr<juce::Component> resoFooter;

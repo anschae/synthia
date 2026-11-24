@@ -122,6 +122,11 @@ tests/                   Catch2: CoreTests (params, state, fuzz, decay, presets,
   filter curve (analytic, incl. live modulated cutoff), pick ADSR (live stage), chopper playhead,
   delay echoes, reverb decay + shimmer tiers, LFO previews (live phase), matrix activity per slot.
   Things computed from parameters (curves, chord notes) use `VizBox::effective()` (modulated value).
+- **Voicer unison** (v0.3): params `vcUniVoices` (1-7), `vcUniDetune` (+-cents of the outer voices),
+  `vcUniWidth`; main voice only (sub/oct/interval stay single), own phase per band and voice,
+  1/sqrt(N) gain, stereo per voice on top of the band spread. Worst case 72 bands x 7 voices + all
+  voices ~27 % of one cloud core. `vcDetune` is shown as "Drift" (ID unchanged). WaveView (side of the
+  Voices row) draws the morph + the mix of all voices.
 - **SectionPanel** layout slots: `setFooter()` (below the last row) and `addSide (comp, row)`
   (right of the last control in a row). The chord slots are `ChordCard`s in the C panel footer.
 
@@ -148,6 +153,7 @@ Milestones 1-6 were built in one go (one commit) because the parameter table and
 shared; CI was green after each push (2026-11-20: all jobs incl. auval + pluginval 10).
 
 - [x] v0.2 Live displays for every section (2026-11-24)
+- [x] v0.3 Voicer unison (1-7 voices) + waveform display; "Supersaw Unison Lead" preset (2026-11-24)
 
 **Not yet done / next steps**
 - Nobody has played it yet: tune by ear with real DIs (`synthia-render`). Factory preset levels were
@@ -171,6 +177,7 @@ Apple Silicon / a recent laptop is 2-3x faster per core.
 - 2026-11-20: Spectral FFT size scales with sample rate; latency = N; Align Spectral default off.
 - 2026-11-20: Reverb = 16-line FDN for every mode (spec allowed 8-16).
 - 2026-11-20: Stutter replaces the grain cloud while on; retrigger every 1/4, 1/2 or bar (extra param `grStutHold`).
+- 2026-11-24: Unison only on the Voicer main voice (CPU; sub/oct/interval stay single). Params appended (IDs vcUni*).
 - 2026-11-20: User presets: `Documents/Synthia/Presets/*.synthia` (XML state, also accepted by synthia-render).
 
 ## Known issues / gotchas
