@@ -346,4 +346,11 @@
     X (vcUniVoices, "Unison Voices", I, 1.0f, 7.0f, 1.0f, Lin, "", voicer, 0, none, "Unison: number of detuned copies of the main voice per band (1 = off). More voices = thicker, more CPU.") \
     X (vcUniDetune, "Unison Detune", F, 0.0f, 100.0f, 18.0f, Sq, "ct", voicer, 1, none, "Spread of the unison voices in cents (symmetric around the original pitch).") \
     X (vcUniWidth, "Unison Width", F, 0.0f, 1.0f, 0.7f, Lin, "%", voicer, 1, none, "Stereo spread of the unison voices.") \
+    X (compOn, "Sustain Comp", B, 0.0f, 1.0f, 0.0f, Lin, "", input, 0, none, "Sustain compressor after the gate: evens out the level so notes ring longer and the pick attack is tamed. Pick detection and the envelope follower still hear the uncompressed signal.") \
+    X (compAmt, "Sustain", F, 0.0f, 1.0f, 0.5f, Lin, "%", input, 1, none, "Amount of sustain: lower threshold + higher ratio, with automatic make-up gain.") \
+    X (compAtk, "Comp Attack", F, 0.1f, 50.0f, 4.0f, Log, "ms", input, 1, none, "Compressor attack: longer lets more of the pick attack through.") \
+    X (compRel, "Comp Release", F, 20.0f, 2000.0f, 250.0f, Log, "ms", input, 1, none, "Compressor release.") \
+    X (compDry, "Comp Dry Too", B, 0.0f, 1.0f, 0.0f, Lin, "", input, 0, none, "Also compress the Dry layer (off = the clean guitar keeps its natural dynamics).") \
+    X (vcHold, "Hold", F, 0.0f, 1.0f, 0.0f, Lin, "%", voicer, 1, none, "Holds every band at the level it had after the pick while the string fades: synth-like sustain without pumping. Muted/stopped strings still stop.") \
+    X (vcHoldTime, "Hold Time", F, 0.2f, 10.0f, 3.0f, Log, "s", voicer, 1, none, "How long held bands take to fade (time for -60 dB).") \
 

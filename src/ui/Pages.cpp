@@ -198,6 +198,8 @@ void fillVoicer (SectionPanel& s)
     s.add (pid::vcDrive); s.add (pid::vcFold); s.add (pid::vcRing); s.add (pid::vcBits, "Bits"); s.add (pid::vcRate, "Rate");
     s.caption ("Unison");
     s.add (pid::vcUniVoices, "Voices"); s.add (pid::vcUniDetune, "Detune"); s.add (pid::vcUniWidth, "Width");
+    s.caption ("Sustain");
+    s.add (pid::vcHold, "Hold"); s.add (pid::vcHoldTime, "Hold Time");
 }
 
 void fillSpectral (SectionPanel& s)
@@ -299,11 +301,19 @@ LayersPage::LayersPage (SynthiaProcessor& p)
     : proc (p), inputPanel (p, "Input", theme::input), master (p, "Output", theme::dry),
       pickTimeline (p), voicerBands (p), waveView (p), spectrum (p), granView (p)
 {
+    inputPanel.caption ("Level / Gate");
     inputPanel.add (pid::inGain, "Gain");
     inputPanel.add (pid::hpf);
     inputPanel.add (pid::gateOn);
     inputPanel.add (pid::gateThr, "Gate Thr");
     inputPanel.add (pid::gateRel, "Gate Rel");
+    inputPanel.caption ("Sustain");
+    inputPanel.add (pid::compOn, "Comp");
+    inputPanel.add (pid::compAmt, "Sustain");
+    inputPanel.add (pid::compAtk, "Attack");
+    inputPanel.add (pid::compRel, "Release");
+    inputPanel.add (pid::compDry, "Dry too");
+    inputPanel.caption ("Analysis");
     inputPanel.add (pid::envAtk);
     inputPanel.add (pid::envRel);
     inputPanel.add (pid::pickSens, "Pick Sens");
@@ -425,11 +435,12 @@ void LayersPage::resized()
 {
     const int stripH = 136;
     const int stripY = getHeight() - stripH - 8;
-    inputPanel.setBounds (8, 8, 204, 0);
-    inputPanel.setBounds (8, 8, 204, juce::jmin (stripY - 16, inputPanel.preferredHeight()));
-    pickTimeline.setBounds (8, inputPanel.getBottom() + 8, 204, stripY - 8 - (inputPanel.getBottom() + 8));
+    constexpr int inputW = 4 * SectionPanel::kCellW + 12;
+    inputPanel.setBounds (8, 8, inputW, 0);
+    inputPanel.setBounds (8, 8, inputW, juce::jmin (stripY - 16, inputPanel.preferredHeight()));
+    pickTimeline.setBounds (8, inputPanel.getBottom() + 8, inputW, stripY - 8 - (inputPanel.getBottom() + 8));
 
-    const int x0 = 220, w = getWidth() - x0 - 8;
+    const int x0 = 8 + inputW + 8, w = getWidth() - x0 - 8;
     const int tabW = w / 5;
     for (int i = 0; i < 5; ++i)
         layerTabs[i].setBounds (x0 + i * tabW, 8, tabW - 6, 26);

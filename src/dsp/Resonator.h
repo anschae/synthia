@@ -24,7 +24,7 @@ constexpr int kModes = 4;
 constexpr float kMetalRatios[kModes] = { 1.0f, 2.756f, 5.404f, 8.933f };
 constexpr float kGlassRatios[kModes] = { 1.0f, 2.32f, 4.25f, 6.63f };
 constexpr float kExciteGain = 0.35f;
-constexpr float kVocoderGain = 5.0f;
+constexpr float kVocoderGain = 20.0f;
 constexpr float kVocLo = 120.0f, kVocHi = 7500.0f;
 } // namespace reso_tuning
 

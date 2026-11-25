@@ -18,7 +18,7 @@ struct VizData
     static constexpr int kTimelineCols = 256;
     static constexpr double kTimelineSeconds = 3.0;
     static constexpr int kTimelineVisible = 192;
-    std::array<std::atomic<float>, kTimelineCols> tlPeak {}, tlEnv {};
+    std::array<std::atomic<float>, kTimelineCols> tlPeak {}, tlEnv {}, tlGr {};
     std::array<std::atomic<uint8_t>, kTimelineCols> tlPick {};
     std::atomic<int> tlWrite { 0 }; // index of the next column to be written
     std::atomic<float> gateThreshold { 0.0f };

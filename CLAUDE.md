@@ -127,6 +127,17 @@ tests/                   Catch2: CoreTests (params, state, fuzz, decay, presets,
   1/sqrt(N) gain, stereo per voice on top of the band spread. Worst case 72 bands x 7 voices + all
   voices ~27 % of one cloud core. `vcDetune` is shown as "Drift" (ID unchanged). WaveView (side of the
   Voices row) draws the morph + the mix of all voices.
+- **Sustain compressor** (v0.4, `dsp/Compressor.h`, `comp_tuning`): after the gate, stereo-linked,
+  dB-domain detector, soft knee, one-knob amount (threshold -8..-48 dBFS, ratio 1.5..20), auto make-up
+  (-14 dBFS in ~= out), soft limiter for transients. Layers get the compressed signal (aligned copies
+  `alignC*`); analysis (pick/env) keeps the uncompressed one; Dry only with `compDry`. GR is shown in
+  the pick timeline (`VizData::tlGr`). Params compOn/compAmt/compAtk/compRel/compDry (section input).
+- **Voicer Hold** (v0.4): per-band peak follower `holdPk` (rises with the band, reset down to the
+  current level on every pick, -60 dB in Hold Time; when a band drops below -40 dB of its held peak
+  = muted string, it fades in 150 ms). Band gain = (holdPk/amp)^Hold, max +30 dB, every 4 samples.
+- **Preset levels:** all factory presets are levelled with `outGain` to ~-26 dBFS RMS / peak <= -6 dBFS
+  on the synthetic DI (script in the v0.4 session: render each preset, offset = min(-26-rms, -6-peak)).
+  Redo after DSP gain changes. Vocoder gain was raised x4 in v0.4.
 - **SectionPanel** layout slots: `setFooter()` (below the last row) and `addSide (comp, row)`
   (right of the last control in a row). The chord slots are `ChordCard`s in the C panel footer.
 
@@ -154,6 +165,8 @@ shared; CI was green after each push (2026-11-20: all jobs incl. auval + pluginv
 
 - [x] v0.2 Live displays for every section (2026-11-24)
 - [x] v0.3 Voicer unison (1-7 voices) + waveform display; "Supersaw Unison Lead" preset (2026-11-24)
+- [x] v0.4 Sustain compressor (input), Voicer Hold, 22 new presets (8 plucks, 14 instrument imitations),
+      all presets levelled; input column 4 cells wide (2026-11-25)
 
 **Not yet done / next steps**
 - Nobody has played it yet: tune by ear with real DIs (`synthia-render`). Factory preset levels were
@@ -162,7 +175,7 @@ shared; CI was green after each push (2026-11-20: all jobs incl. auval + pluginv
 - Possible extras: MIDI learn, preset tags, input/output spectrum overlay on the filter curve.
 
 **Performance** (synthia-render, 48 kHz, block 64, RelWithDebInfo, cloud Xeon 2.1 GHz):
-Init (Voicer 48 bands + reverb) ~8 % of one core; all five layers + delay + reverb at defaults ~11 %;
+Init (Voicer 48 bands + reverb) ~8 % of one core; instrument presets 6-12 %; all five layers + delay + reverb at defaults ~11 %;
 worst case (72 bands, 4x OS, all voices, 100 grains/s x 500 ms, metal resonators, all FX) ~25 %.
 Apple Silicon / a recent laptop is 2-3x faster per core.
 Live displays (2026-11-24, same machine): audio-thread data path +0.2-0.3 %-points with all layers on
@@ -182,6 +195,8 @@ FX ~3.9 %, Mod ~0.9 % of one core (`SynthiaSnapshot out "Preset" 1.0 --bench`). 
 - 2026-11-20: Reverb = 16-line FDN for every mode (spec allowed 8-16).
 - 2026-11-20: Stutter replaces the grain cloud while on; retrigger every 1/4, 1/2 or bar (extra param `grStutHold`).
 - 2026-11-24: Unison only on the Voicer main voice (CPU; sub/oct/interval stay single). Params appended (IDs vcUni*).
+- 2026-11-25: Sustain = compressor in the input stage (layers only, analysis uncompressed) + per-band Voicer
+  Hold, instead of one global compressor (user: notes decayed too fast).
 - 2026-11-20: User presets: `Documents/Synthia/Presets/*.synthia` (XML state, also accepted by synthia-render).
 
 ## Known issues / gotchas

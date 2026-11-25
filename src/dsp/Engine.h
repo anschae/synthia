@@ -18,6 +18,7 @@
 #include <memory>
 
 #include "dsp/AmpShaper.h"
+#include "dsp/Compressor.h"
 #include "dsp/Granular.h"
 #include "dsp/InputStage.h"
 #include "dsp/MainFilter.h"
@@ -111,6 +112,7 @@ private:
 
     double sr = 48000.0;
     InputStage input;
+    SustainCompressor comp;
     Voicer voicer;
     Spectral spectral;
     ResonatorLayer reso;
@@ -126,14 +128,14 @@ private:
     bool delayNeedsReset = true, reverbNeedsReset = true;
 
     // Align Spectral: delay lines for the non-spectral paths
-    DelayLine alignL, alignR, alignMono, alignRawL, alignRawR;
+    DelayLine alignL, alignR, alignMono, alignRawL, alignRawR, alignCL, alignCR, alignCMono;
     int alignSamples = 0;
     std::atomic<int> desiredLatency { 0 };
 
     double freePpq = 0.0;
     bool prepared = false;
     double tlColLen = 750.0, tlCount = 0.0;
-    float tlPeak = 0.0f;
+    float tlPeak = 0.0f, tlGr = 0.0f;
     bool tlPick = false;
     float pickEnvForMod = 0.0f;
     int pickCounter = 0;

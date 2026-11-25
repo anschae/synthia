@@ -125,7 +125,7 @@ void VizBox::paint (juce::Graphics& g)
 // ============================================================================ PickTimeline
 PickTimeline::PickTimeline (SynthiaProcessor& p) : VizBox (p, "Picks", theme::input)
 {
-    setLegend ({ { theme::text, "Pick", 1 }, { theme::mod, "Env", 1 }, { juce::Colour (0xff6b7280), "Gate", 2 } });
+    setLegend ({ { theme::text, "Pick", 1 }, { theme::mod, "Env", 1 }, { juce::Colour (0xfffb923c), "Comp GR", 1 }, { juce::Colour (0xff6b7280), "Gate", 2 } });
 }
 
 void PickTimeline::paintContent (juce::Graphics& g, juce::Rectangle<float> r)
@@ -137,8 +137,9 @@ void PickTimeline::paintContent (juce::Graphics& g, juce::Rectangle<float> r)
     auto yUp = [&] (float lin) { return mid - (mid - r.getY() - 6.0f) * juce::jlimit (0.0f, 1.0f, (toDb (lin) + 60.0f) / 60.0f); };
     auto yDown = [&] (float lin) { return mid + (r.getBottom() - mid) * juce::jlimit (0.0f, 1.0f, (toDb (lin) + 60.0f) / 60.0f); };
     const float dx = r.getWidth() / (float) (N - 1);
-    juce::Path wave, env;
+    juce::Path wave, env, gr;
     std::vector<float> picks;
+    bool anyGr = false;
     for (int i = 0; i < N; ++i)
     {
         const int idx = ((w - N + i) % dsp::VizData::kTimelineCols + dsp::VizData::kTimelineCols) % dsp::VizData::kTimelineCols;
@@ -148,6 +149,10 @@ void PickTimeline::paintContent (juce::Graphics& g, juce::Rectangle<float> r)
         const float e = viz.tlEnv[(size_t) idx].load();
         if (i == 0) env.startNewSubPath (x, yUp (e)); else env.lineTo (x, yUp (e));
         if (viz.tlPick[(size_t) idx].load()) picks.push_back (x);
+        const float grDb = viz.tlGr[(size_t) idx].load();
+        anyGr = anyGr || grDb > 0.1f;
+        const float yg = r.getY() + 2.0f + (mid - r.getY()) * juce::jlimit (0.0f, 1.0f, grDb / 30.0f); // 0..30 dB downwards
+        if (i == 0) gr.startNewSubPath (x, yg); else gr.lineTo (x, yg);
     }
     for (int i = N - 1; i >= 0; --i)
     {
@@ -165,6 +170,11 @@ void PickTimeline::paintContent (juce::Graphics& g, juce::Rectangle<float> r)
     }
     g.setColour (theme::mod);
     g.strokePath (env, juce::PathStrokeType (1.3f));
+    if (anyGr)
+    {
+        g.setColour (juce::Colour (0xfffb923c));
+        g.strokePath (gr, juce::PathStrokeType (1.3f));
+    }
     g.setColour (theme::text);
     for (float x : picks)
     {

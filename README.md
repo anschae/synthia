@@ -92,6 +92,17 @@ partials, chord keyboards and resonator voice meters, the granular buffer with e
 curve, pick ADSR, chopper playhead, delay echoes, reverb decay, LFO shapes and live matrix activity.
 Displays only run while the window is open and cost no audio CPU otherwise.
 
+### Input & sustain
+The guitar's natural dynamics (loud pick, fast decay) are passed on to every layer. Two tools even it out:
+- **Sustain compressor** (Input → Sustain): switch **Comp** on and raise **Sustain** — lower threshold,
+  higher ratio and automatic make-up, like a sustainer pedal. **Attack** lets some pick through,
+  **Dry too** decides whether the clean Dry layer is compressed as well. Pick detection and the envelope
+  follower still listen to the uncompressed guitar. The orange line in the **Picks** display shows the
+  gain reduction.
+- **Voicer Hold** (Voicer → Sustain): every band is held at the level it had after the pick while the
+  string fades (**Hold Time** = how long the held level takes to fade). Gives organ/pad-like sustain
+  without the pumping of a compressor; muting the strings still stops the sound.
+
 ### A — Voicer (the synth)
 The guitar is split into 24–72 narrow bands; every band drives its own oscillator at the band's
 instantaneous frequency. **Wave** morphs sine → saw → square → pulse; **Sub**, **Oct Up** and
@@ -141,6 +152,14 @@ scaled by **Via** (e.g. Macro 1 fades a modulation in). Modulated knobs show a y
 value. The **step sequencer** has its own length (1–32 steps) independent of the bar – 7 steps of 1/16
 against 4/4 gives a polymeter; rates include triplets and quintuplets. Draw values with the mouse,
 double-click (or Alt-click) resets a step, the small boxes below enable glide into a step.
+
+### Factory presets
+Categories: Lead, **Pluck** (saw/sine/square plucks, glass, funk, ping-pong arp, djent layer, granular),
+**Instrument** imitations (piano, electric piano, flute, clarinet, strings, cello, church/rock organ,
+trumpet, choir, music box, marimba, harp, sitar drone), Bass, Djent, Pad, Ambient, Resonator, Vocoder,
+Rhythmic, Mod, FX. The instruments are approximations made from guitar — they follow your playing
+(no MIDI), so they work best with clean, single-note or simple chord parts. All presets are levelled
+to a similar loudness on a clean DI.
 
 ### Presets, A/B, randomize
 User presets are saved to `Documents/Synthia/Presets` (`*.synthia`, plain XML). **A/B** keeps two

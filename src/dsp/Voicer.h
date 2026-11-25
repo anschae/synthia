@@ -36,6 +36,12 @@ constexpr float kOutputGain = 2.2f;
 constexpr float kFocusExp = 6.0f;
 // Tilt range across the band range (dB at +-100 %).
 constexpr float kTiltDb = 18.0f;
+// Hold: a band below this fraction of its held peak counts as "stopped" (muted string) ...
+constexpr float kHoldMuteRatio = 0.01f; // -40 dB
+// ... and then fades with this -60 dB time instead of Hold Time.
+constexpr float kHoldMuteSeconds = 0.15f;
+// Maximum make-up per band (+30 dB).
+constexpr float kHoldMaxGain = 31.6f;
 } // namespace voicer_tuning
 
 class Voicer
@@ -69,6 +75,7 @@ public:
             y1r[k] = y1i[k] = y2r[k] = y2i[k] = 0.0f;
             zsr[k] = 1.0e-9f; zsi[k] = 0.0f;
             amp[k] = 0.0f; w[k] = 1.0f;
+            holdPk[k] = 0.0f; holdG[k] = 1.0f;
             th[k] = rng.uni(); ths[k] = rng.uni(); tho[k] = rng.uni(); thi[k] = rng.uni();
             for (int j = 0; j < kMaxUnison; ++j) thu[k][j] = rng.uni();
             drift[k] = driftT[k] = 0.0f;
@@ -103,6 +110,9 @@ public:
         const float ring = p.cur (pid::vcRing);
         const float spread = p.cur (pid::vcSpread);
         catk = onePoleCoef (smoothMs, sr);
+        holdAmt = p.cur (pid::vcHold);
+        holdRel = std::pow (10.0f, -3.0f / (p.cur (pid::vcHoldTime) * (float) sr));
+        holdFast = std::pow (10.0f, -3.0f / (voicer_tuning::kHoldMuteSeconds * (float) sr));
         crel = onePoleCoef (smoothMs * 3.0f, sr);
 
         if (tilt != lastTilt || spread != lastSpread || K != lastWeightsK)
@@ -168,8 +178,25 @@ public:
                 const float ar = 2.0f * std::sqrt (a2r * a2r + a2i * a2i);
                 amp[k] = ar + (amp[k] - ar) * (ar > amp[k] ? catk : crel);
             }
+            // ---- hold: per-band peak follower (reset on picks, fast release when the string is muted)
+            if (holdAmt > 0.001f)
+            {
+                if (c.picks[s])
+                    for (int k = 0; k < K; ++k) holdPk[k] = std::min (holdPk[k], amp[k]);
+                for (int k = 0; k < K; ++k)
+                {
+                    const float a = amp[k];
+                    if (a > holdPk[k]) holdPk[k] = a;
+                    else holdPk[k] *= (a < holdPk[k] * voicer_tuning::kHoldMuteRatio) ? holdFast : holdRel;
+                }
+            }
             if ((counter4++ & 3) == 0)
             {
+                if (holdAmt > 0.001f)
+                    for (int k = 0; k < K; ++k)
+                        holdG[k] = amp[k] > 1.0e-7f ? std::min (voicer_tuning::kHoldMaxGain, std::pow (holdPk[k] / amp[k], holdAmt)) : 1.0f;
+                else
+                    for (int k = 0; k < K; ++k) holdG[k] = 1.0f;
                 for (int k = 0; k < K; ++k)
                 {
                     float dphi = fastAtan2 (zsi[k], zsr[k]);
@@ -194,7 +221,7 @@ public:
             float l = 0.0f, r = 0.0f, sub = 0.0f;
             for (int k = 0; k < K; ++k)
             {
-                const float a = amp[k] * w[k] * tiltW[k];
+                const float a = amp[k] * w[k] * tiltW[k] * holdG[k];
                 if (a < 1.0e-7f)
                 {
                     advancePhases (k, ratio);
@@ -420,6 +447,8 @@ private:
     float y1r[kMaxBands] {}, y1i[kMaxBands] {}, y2r[kMaxBands] {}, y2i[kMaxBands] {};
     float zsr[kMaxBands] {}, zsi[kMaxBands] {}, amp[kMaxBands] {}, w[kMaxBands] {}, inc[kMaxBands] {};
     float th[kMaxBands] {}, ths[kMaxBands] {}, tho[kMaxBands] {}, thi[kMaxBands] {};
+    float holdPk[kMaxBands] {}, holdG[kMaxBands] {};
+    float holdAmt = 0.0f, holdRel = 0.9999f, holdFast = 0.999f;
     float thu[kMaxBands][kMaxUnison] {};
     float uniF[kMaxUnison] {}, uniGL[kMaxUnison] {}, uniGR[kMaxUnison] {};
     float tiltW[kMaxBands] {}, panL[kMaxBands] {}, panR[kMaxBands] {}, hashPan[kMaxBands] {};

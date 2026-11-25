@@ -213,6 +213,14 @@ for n in range(1, 17):
 I('vcUniVoices', 'Unison Voices', 1, 7, 1, '', 'voicer', 'Unison: number of detuned copies of the main voice per band (1 = off). More voices = thicker, more CPU.', 0)
 F('vcUniDetune', 'Unison Detune', 0, 100, 18, 'Sq', 'ct', 'voicer', 'Spread of the unison voices in cents (symmetric around the original pitch).')
 F('vcUniWidth', 'Unison Width', 0, 1, 0.7, 'Lin', '%', 'voicer', 'Stereo spread of the unison voices.')
+# v0.4: sustain compressor (input) + Voicer hold
+B('compOn', 'Sustain Comp', 0, 'input', 'Sustain compressor after the gate: evens out the level so notes ring longer and the pick attack is tamed. Pick detection and the envelope follower still hear the uncompressed signal.')
+F('compAmt', 'Sustain', 0, 1, 0.5, 'Lin', '%', 'input', 'Amount of sustain: lower threshold + higher ratio, with automatic make-up gain.')
+F('compAtk', 'Comp Attack', 0.1, 50, 4, 'Log', 'ms', 'input', 'Compressor attack: longer lets more of the pick attack through.')
+F('compRel', 'Comp Release', 20, 2000, 250, 'Log', 'ms', 'input', 'Compressor release.')
+B('compDry', 'Comp Dry Too', 0, 'input', 'Also compress the Dry layer (off = the clean guitar keeps its natural dynamics).')
+F('vcHold', 'Hold', 0, 1, 0, 'Lin', '%', 'voicer', 'Holds every band at the level it had after the pick while the string fades: synth-like sustain without pumping. Muted/stopped strings still stop.')
+F('vcHoldTime', 'Hold Time', 0.2, 10, 3, 'Log', 's', 'voicer', 'How long held bands take to fade (time for -60 dB).')
 
 def esc(s): return s.replace('\\', '\\\\').replace('"', '\\"')
 ids = [p[0] for p in P]

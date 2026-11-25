@@ -27,6 +27,7 @@ void Engine::prepare (double sampleRate, int)
     params.prepare (sr);
     mod.prepare (sr);
     input.prepare (sr);
+    comp.prepare (sr);
     voicer.prepare (sr);
     voicer.setViz (&viz);
     spectral.setViz (&viz);
@@ -43,7 +44,7 @@ void Engine::prepare (double sampleRate, int)
     delay.prepare (sr);
     reverb.prepare (sr);
     const int maxAlign = Spectral::sizeForChoice (2, sr) + 8;
-    for (auto* d : { &alignL, &alignR, &alignMono, &alignRawL, &alignRawR })
+    for (auto* d : { &alignL, &alignR, &alignMono, &alignRawL, &alignRawR, &alignCL, &alignCR, &alignCMono })
         d->prepare (maxAlign);
     prepared = true;
     for (auto& f : layerFade) f.setup (15.0f, sr);
@@ -58,6 +59,7 @@ void Engine::reset()
     params.snapToTargets();
     mod.reset();
     input.reset();
+    comp.reset();
     voicer.reset();
     spectral.reset();
     reso.reset();
@@ -67,7 +69,7 @@ void Engine::reset()
     amp.reset();
     delay.reset();
     reverb.reset();
-    for (auto* d : { &alignL, &alignR, &alignMono, &alignRawL, &alignRawR })
+    for (auto* d : { &alignL, &alignR, &alignMono, &alignRawL, &alignRawR, &alignCL, &alignCR, &alignCMono })
         d->clear();
     for (int i = 0; i < numLayers; ++i)
     {
@@ -158,7 +160,14 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
     float rawL[kChunk], rawR[kChunk];   // untouched input (global dry / bypass)
     float stL[kChunk], stR[kChunk];     // after input stage (aligned)
     float monoNow[kChunk];              // after input stage, undelayed (spectral)
-    float mono[kChunk];                 // after input stage, aligned
+    float mono[kChunk];                 // after input stage, aligned (uncompressed: analysis)
+    // sustain compressor output (what the layers hear)
+    float cL[kChunk], cR[kChunk], cMono[kChunk], cMonoNow[kChunk];
+    const bool compOn = p.on (pid::compOn);
+    if (compOn)
+        comp.setChunk (p.cur (pid::compAmt), p.cur (pid::compAtk), p.cur (pid::compRel));
+    else
+        comp.reset();
     bool picks[kChunk];
     bool anyPick = false;
     for (int s = 0; s < n; ++s)
@@ -168,21 +177,32 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
         float l = L[s], r = R[s];
         input.processSample (l, r, s);
         monoNow[s] = 0.5f * (l + r);
+        float l2 = l, r2 = r;
+        if (compOn)
+            comp.process (l2, r2);
+        cMonoNow[s] = 0.5f * (l2 + r2);
         if (alignSamples > 0)
         {
             alignL.push (l); alignR.push (r); alignMono.push (monoNow[s]);
+            alignCL.push (l2); alignCR.push (r2); alignCMono.push (cMonoNow[s]);
             alignRawL.push (rawL[s]); alignRawR.push (rawR[s]);
             stL[s] = alignL.at (alignSamples);
             stR[s] = alignR.at (alignSamples);
             mono[s] = alignMono.at (alignSamples);
+            cL[s] = alignCL.at (alignSamples);
+            cR[s] = alignCR.at (alignSamples);
+            cMono[s] = alignCMono.at (alignSamples);
             rawL[s] = alignRawL.at (alignSamples);
             rawR[s] = alignRawR.at (alignSamples);
         }
         else
         {
             stL[s] = l; stR[s] = r; mono[s] = monoNow[s];
+            cL[s] = l2; cR[s] = r2; cMono[s] = cMonoNow[s];
         }
         picks[s] = input.analyse (mono[s]);
+        if (vizOn)
+            tlGr = std::max (tlGr, compOn ? comp.gainReductionDb() : 0.0f);
         anyPick = anyPick || picks[s];
         if (vizOn)
         {
@@ -195,6 +215,8 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
                 viz.tlPeak[(size_t) w].store (tlPeak, std::memory_order_relaxed);
                 viz.tlEnv[(size_t) w].store (input.envLinear(), std::memory_order_relaxed);
                 viz.tlPick[(size_t) w].store (tlPick ? 1 : 0, std::memory_order_relaxed);
+                viz.tlGr[(size_t) w].store (tlGr, std::memory_order_relaxed);
+                tlGr = 0.0f;
                 viz.tlWrite.store ((w + 1) % VizData::kTimelineCols, std::memory_order_relaxed);
                 tlPeak = 0.0f;
                 tlPick = false;
@@ -263,11 +285,16 @@ void Engine::processChunk (float* L, float* R, int n, int numInputChannels, cons
         float oL[kChunk], oR[kChunk];
         switch (i)
         {
-            case layerVoicer: voicer.process (mono, oL, oR, ctx); break;
-            case layerSpectral: spectral.process (monoNow, oL, oR, ctx); break;
-            case layerReso: reso.process (mono, oL, oR, ctx); break;
-            case layerGranular: granular.process (mono, oL, oR, ctx); break;
-            default: dry.process (stL, stR, oL, oR, n, p.cur (pid::dryTilt)); break;
+            case layerVoicer: voicer.process (cMono, oL, oR, ctx); break;
+            case layerSpectral: spectral.process (cMonoNow, oL, oR, ctx); break;
+            case layerReso: reso.process (cMono, oL, oR, ctx); break;
+            case layerGranular: granular.process (cMono, oL, oR, ctx); break;
+            default:
+            {
+                const bool dryComp = p.on (pid::compDry);
+                dry.process (dryComp ? cL : stL, dryComp ? cR : stR, oL, oR, n, p.cur (pid::dryTilt));
+                break;
+            }
         }
         const bool toFilter = p.on (b + 5);
         float* dL = toFilter ? busFL : busBL;

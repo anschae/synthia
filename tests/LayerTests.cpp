@@ -315,3 +315,62 @@ TEST_CASE ("voicer unison thickens and widens the main voice", "[voicer]")
     REQUIRE (ru > rm * 0.4);
     REQUIRE (ru < rm * 2.5);
 }
+
+namespace
+{
+/** Ratio (dB) between the level 0.1-0.3 s and 1.6-1.8 s after a single decaying pluck. */
+double decayDb (const juce::AudioBuffer<float>& out, double sr)
+{
+    const double early = rms (out, 0, (int) (0.1 * sr), (int) (0.2 * sr));
+    const double late = rms (out, 0, (int) (1.6 * sr), (int) (0.2 * sr));
+    return 20.0 * std::log10 (early / std::max (1e-9, late));
+}
+} // namespace
+
+TEST_CASE ("sustain compressor evens out a decaying note, picks still detected", "[input][comp]")
+{
+    auto render = [] (bool comp, int& picksOut)
+    {
+        Rig r;
+        soloLayer (r, pid::dryOn);
+        r.set (pid::hpf, 20.0f);
+        r.set (pid::compOn, comp ? 1.0f : 0.0f);
+        r.set (pid::compAmt, 0.8f);
+        r.set (pid::compDry, 1.0f);
+        r.prepare();
+        const int before = r.proc.engine.pickCount.load();
+        auto out = r.run (plucks (r.sr, 110.0f, 2.0, 2.0, 0.7f), 32);
+        picksOut = r.proc.engine.pickCount.load() - before;
+        REQUIRE (allFinite (out));
+        REQUIRE (peak (out) < 1.5f);
+        return out;
+    };
+    int pOff = 0, pOn = 0;
+    auto off = render (false, pOff);
+    auto on = render (true, pOn);
+    const double dOff = decayDb (off, 48000.0), dOn = decayDb (on, 48000.0);
+    INFO ("decay without comp " << dOff << " dB, with comp " << dOn << " dB");
+    REQUIRE (dOn < dOff - 6.0);
+    REQUIRE (pOn == pOff); // analysis hears the uncompressed signal
+}
+
+TEST_CASE ("voicer hold sustains bands while the input decays", "[voicer][hold]")
+{
+    auto render = [] (float hold)
+    {
+        Rig r;
+        soloLayer (r, pid::vcOn);
+        r.set (pid::vcWave, 0.0f);
+        r.set (pid::vcDetune, 0.0f);
+        r.set (pid::vcHold, hold);
+        r.set (pid::vcHoldTime, 10.0f);
+        r.prepare();
+        auto out = r.run (plucks (r.sr, 110.0f, 2.0, 2.0, 0.7f), 32);
+        REQUIRE (allFinite (out));
+        REQUIRE (peak (out) < 4.0f);
+        return out;
+    };
+    const double dOff = decayDb (render (0.0f), 48000.0), dOn = decayDb (render (1.0f), 48000.0);
+    INFO ("decay without hold " << dOff << " dB, with hold " << dOn << " dB");
+    REQUIRE (dOn < dOff - 6.0);
+}
